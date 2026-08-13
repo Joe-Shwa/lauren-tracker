@@ -269,6 +269,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="nav-tab" id="nav-weight" onclick="showTab('weight',this)"><span class="ti">⚖️</span>Weight</div>
   <div class="nav-tab" id="nav-sleep" onclick="showTab('sleep',this)"><span class="ti">😴</span>Sleep</div>
   <div class="nav-tab" id="nav-supps" onclick="showTab('supps',this)"><span class="ti">💊</span>Supps</div>
+  <div class="nav-tab" id="nav-peptides" onclick="showTab('peptides',this)"><span class="ti">🧬</span>Peptides</div>
   <div class="nav-tab" id="nav-ask" onclick="showTab('ask',this)"><span class="ti">💬</span>Ask</div>
 </div>
 
@@ -539,6 +540,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   </div>
 </div>
 
+<!-- PEPTIDES (not live yet — off by default in Settings) -->
+<div class="section hidden" id="tab-peptides">
+  <div class="info-box amber" style="margin-bottom:10px">⚠️ Always check any peptide against your soy allergy before starting — some carrier/filler compounds can contain soy derivatives.</div>
+  <div id="peptide-list"></div>
+  <div class="card">
+    <div class="card-title">+ Add Peptide</div>
+    <div class="form-group"><div class="input-label">Name</div><input class="input-field" id="pep-name" placeholder="e.g. BPC-157"></div>
+    <div class="form-group"><div class="input-label">Dose / timing (as you'd say it)</div><input class="input-field" id="pep-dose" placeholder="e.g. 250mcg subcutaneous daily"></div>
+    <div class="form-group"><div class="input-label">Purpose &amp; cautions — leave blank to auto-fill</div><input class="input-field" id="pep-purpose" placeholder="Optional — I'll look it up if left blank"></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:10px"><input type="checkbox" id="pep-appetite"> Suppresses appetite (affects protein-goal messaging)</label>
+    <button class="btn btn-primary btn-sm" style="width:auto" onclick="addPeptide()">Add ✓</button>
+  </div>
+</div>
+
 <!-- ASK -->
 <div class="section hidden" id="tab-ask">
   <div class="chat-wrap">
@@ -568,11 +583,15 @@ let S = {
   sleep: [],
   supps: {nac_am:false,curcumin:false,nac_pm:false,reta:false,ta1:false},
   supplements: null,
-  settings: {tabs:{weight:true,sleep:true,supps:true,ask:true}},
+  peptides: null,
+  peptideLogs: null,
+  peptideChecks: null,
+  settings: {tabs:{weight:true,sleep:true,supps:true,peptides:false,ask:true}},
   tombstones: []
 };
 let chatHistory = [];
 let lookupPending = null;
+let expandedPeptides = new Set();
 
 // ─── ID / SYNC HELPERS ────────────────────────────────────────────────────────
 function newId(prefix){return prefix+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);}
@@ -600,9 +619,10 @@ function migrateArr(arr,prefix,dateField){
 }
 function migrateState(){
   if(!S.tombstones)S.tombstones=[];
-  if(!S.settings)S.settings={tabs:{weight:true,sleep:true,supps:true,ask:true}};
-  if(!S.settings.tabs)S.settings.tabs={weight:true,sleep:true,supps:true,ask:true};
+  if(!S.settings)S.settings={tabs:{weight:true,sleep:true,supps:true,peptides:false,ask:true}};
+  if(!S.settings.tabs)S.settings.tabs={weight:true,sleep:true,supps:true,peptides:false,ask:true};
   ['weight','sleep','supps','ask'].forEach(k=>{if(typeof S.settings.tabs[k]!=='boolean')S.settings.tabs[k]=true;});
+  if(typeof S.settings.tabs.peptides!=='boolean')S.settings.tabs.peptides=false; // stays off until Lauren decides to use it
   // Migrate meals/water from the old "today only" storage into permanent dated logs
   if(!S.meals)S.meals=[];
   if(!S.water)S.water=[];
@@ -637,6 +657,13 @@ function migrateState(){
     delete S.customSupps;
   }
   migrateArr(S.supplements,'supp');
+  // Peptides: no seed list for Lauren — starts empty, she adds her own if/when she starts using them
+  if(!S.peptides)S.peptides=[];
+  migrateArr(S.peptides,'pep');
+  if(!S.peptideLogs)S.peptideLogs=[];
+  migrateArr(S.peptideLogs,'pep_log');
+  if(!S.peptideChecks)S.peptideChecks={};
+  S.peptides.forEach(p=>{if(p.tracking==='checklist'&&!(p.id in S.peptideChecks))S.peptideChecks[p.id]=false;});
 }
 
 const QUICK_FOODS = [
@@ -690,6 +717,7 @@ const OPTIONAL_TABS=[
   {key:'weight',label:'⚖️ Weight'},
   {key:'sleep',label:'😴 Sleep'},
   {key:'supps',label:'💊 Supps'},
+  {key:'peptides',label:'🧬 Peptides'},
   {key:'ask',label:'💬 Ask'}
 ];
 function openSettings(){renderSettingsPanel();document.getElementById('settings-overlay').classList.remove('hidden');}
@@ -796,7 +824,7 @@ function updateMacros(){
   const rem=g.pro-t.pro,pm=document.getElementById('protein-msg');
   if(rem<=0){pm.style.color='var(--green)';pm.innerHTML='✅ Protein done. Muscle preservation ticked off for today.';}
   else if(rem<40){pm.style.color='var(--amber)';pm.innerHTML=`⚡ ${Math.round(rem)}g to go. Chicken breast or protein shake will close it.`;}
-  else{pm.style.color='var(--muted)';const appetiteNote=(S.supps&&S.supps.reta)?' Protein first — especially important on days you\'ve taken Retatrutide, since it can suppress appetite.':'';pm.innerHTML=`💪 ${Math.round(rem)}g still to hit.${appetiteNote}`;}
+  else{pm.style.color='var(--muted)';const appetiteSuppressing=(S.supps&&S.supps.reta)||(S.peptides||[]).some(pp=>pp.affectsAppetite);const appetiteNote=appetiteSuppressing?' Protein first — especially important on days affected by an appetite-suppressing peptide.':'';pm.innerHTML=`💪 ${Math.round(rem)}g still to hit.${appetiteNote}`;}
   document.getElementById('hs-protein').textContent=Math.round(t.pro)+'/'+g.pro+'g protein';
 }
 function getWaterTotal(){return waterTotalForDate(viewDateStr());}
@@ -1231,21 +1259,119 @@ function updateOtherLogs(){
   document.getElementById('other-logs-body').innerHTML=html;
 }
 
+// ─── PEPTIDES (built ahead of time — off by default until Lauren decides to use it) ──
+function getPeptideWeek(p){
+  if(p.dosing.type!=='titration')return null;
+  const start=new Date(p.dosing.startDate),msWeek=7*24*60*60*1000;
+  return Math.min(Math.max(Math.floor((new Date()-start)/msWeek)+1,1),p.dosing.schedule.length);
+}
+function togglePeptideExpand(id){if(expandedPeptides.has(id))expandedPeptides.delete(id);else expandedPeptides.add(id);renderPeptides();}
+function togglePeptideCheck(id){S.peptideChecks[id]=!S.peptideChecks[id];saveLocal();renderPeptides();}
+function logPeptideDose(id){
+  const date=document.getElementById('pd-date-'+id).value,units=document.getElementById('pd-units-'+id).value,mg=document.getElementById('pd-mg-'+id).value,notes=document.getElementById('pd-notes-'+id).value;
+  if(!date||!units)return;
+  S.peptideLogs.push({id:newId('pep_log'),peptideId:id,updatedAt:Date.now(),date,units:+units,mg:+mg,notes});
+  saveLocal();renderPeptides();
+}
+function delPeptideLog(id){S.peptideLogs=S.peptideLogs.filter(l=>l.id!==id);markDeleted('pep_log',id);saveLocal();renderPeptides();}
+function removePeptide(id){
+  S.peptides=S.peptides.filter(p=>p.id!==id);
+  S.peptideLogs=S.peptideLogs.filter(l=>l.peptideId!==id);
+  delete S.peptideChecks[id];
+  markDeleted('peptide',id);
+  saveLocal();renderPeptides();
+}
+async function addPeptide(){
+  const name=document.getElementById('pep-name').value.trim();
+  const dose=document.getElementById('pep-dose').value.trim();
+  const purposeInput=document.getElementById('pep-purpose').value.trim();
+  const appetite=document.getElementById('pep-appetite').checked;
+  if(!name)return;
+  const id=newId('pep');
+  S.peptides.push({id,name,custom:true,updatedAt:Date.now(),purpose:purposeInput,cautions:[],evidence:'',affectsAppetite:appetite,tracking:'checklist',dosing:{type:'fixed',doseLabel:dose||'As directed',frequency:''}});
+  S.peptideChecks[id]=false;
+  saveLocal();renderPeptides();
+  ['pep-name','pep-dose','pep-purpose'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('pep-appetite').checked=false;
+  if(!purposeInput){
+    const info=await fetchPeptideInfo(name,dose);
+    const idx=S.peptides.findIndex(x=>x.id===id);
+    if(idx>-1){S.peptides[idx].purpose=info.purpose||S.peptides[idx].purpose;S.peptides[idx].cautions=info.cautions||[];S.peptides[idx].evidence=info.evidence||'';S.peptides[idx].updatedAt=Date.now();saveLocal();renderPeptides();}
+  }
+}
+async function fetchPeptideInfo(name,dose){
+  try{
+    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:350,messages:[{role:'user',content:`Give a brief practical profile for the peptide/compound "${name}" (dose/timing as described: "${dose}"). Also flag if it commonly involves soy-derived carriers or fillers, since the user has an anaphylactic soy allergy. Return ONLY valid JSON, no other text:
+{"purpose":"one sentence — what it's used for","cautions":["short caution 1","short caution 2"],"evidence":"one short clause, or empty string"}
+
+Rules:
+- "cautions": at most 2, only genuinely relevant ones (timing, interactions, common side effects, or soy-derived excipients if applicable). Empty array if nothing notable.
+- "evidence": only fill this in if there's a meaningful gap between how long/widely a compound has been used in humans and how well that use is independently verified by modern Western trial standards. When it applies, state it as two short clauses: "Long clinical/use history in [region/context]; limited independent Western trial data" — never collapse into vague phrasing like "limited human data" alone. If the compound's evidence is well-established, or there's genuinely little human use of any kind, leave "evidence" as an empty string.`}]})});
+    const data=await resp.json();
+    const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
+    const info=JSON.parse(text.replace(/```json\n?|```/g,'').trim());
+    if(!info.evidence)info.evidence='';
+    return info;
+  }catch(e){return {purpose:'',cautions:[],evidence:''};}
+}
+function renderPeptides(){
+  const el=document.getElementById('peptide-list');if(!el)return;
+  el.innerHTML=(S.peptides||[]).map(p=>{
+    const expanded=expandedPeptides.has(p.id);
+    let wk=null,sc=null,statusLine;
+    if(p.dosing.type==='titration'){wk=getPeptideWeek(p);sc=p.dosing.schedule[wk-1];statusLine=`Week ${wk}/${p.dosing.schedule.length} · ${sc.units}u / ${sc.mg}mg`;}
+    else{statusLine=p.dosing.doseLabel;}
+    let html=`<div class="reta-card" onclick="togglePeptideExpand('${p.id}')">
+      <div class="reta-title">${p.dosing.type==='titration'?'⚡':'💊'} ${p.name}</div>
+      <div class="reta-row"><span class="reta-label">${p.dosing.frequency||''}</span><span class="reta-value">${statusLine}</span></div>
+      ${p.purpose?`<div class="pep-purpose">${p.purpose}</div>`:''}
+      <div style="text-align:right;margin-top:6px"><span class="pep-chevron">${expanded?'▲ less':'▼ details'}</span></div>
+    </div>`;
+    if(!expanded)return html;
+    let body=`<div class="pep-body" onclick="event.stopPropagation()">`;
+    (p.cautions||[]).forEach(c=>{body+=`<div class="pep-caution">⚠️ ${c}</div>`;});
+    if(p.evidence){body+=`<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">📋 ${p.evidence}</div>`;}
+    if(p.dosing.type==='titration'){
+      body+=`<div class="card-title" style="margin-top:2px">Titration schedule</div><div style="margin-bottom:12px">`+
+        p.dosing.schedule.map(w=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;${w.week===wk?'font-weight:700;color:var(--blue);background:var(--blue-pale);margin:0 -4px;padding:6px 4px;border-radius:6px':''}"><span>Wk ${w.week}</span><span>${w.units}u / ${w.mg}mg</span><span style="color:var(--muted)">${w.vial||''}</span></div>`).join('')+
+        `</div><div class="card-title">Log this injection</div>
+        <div class="form-group"><div class="input-label">Date</div><input class="input-field" id="pd-date-${p.id}" type="date"></div>
+        <div class="input-row">
+          <div style="flex:1"><div class="input-label">Units</div><input class="input-field" id="pd-units-${p.id}" type="number" placeholder="${sc?sc.units:''}"></div>
+          <div style="flex:1"><div class="input-label">Dose (mg)</div><input class="input-field" id="pd-mg-${p.id}" type="number" step="0.5" placeholder="${sc?sc.mg:''}"></div>
+        </div>
+        <div class="form-group"><div class="input-label">Notes</div><input class="input-field" id="pd-notes-${p.id}" placeholder="e.g. No nausea, mild head sensation"></div>
+        <button class="btn btn-primary btn-sm" style="width:auto" onclick="logPeptideDose('${p.id}')">Log injection</button>
+        <div class="card-title" style="margin-top:14px">History</div>
+        <div style="font-size:13px;color:var(--muted)">${[...S.peptideLogs.filter(l=>l.peptideId===p.id)].sort((a,b)=>b.updatedAt-a.updatedAt).map(r=>`<div class="history-row"><span>${r.date}</span><span style="font-weight:700">${r.units}u / ${r.mg}mg${r.notes?' · '+r.notes:''} <span class="meal-del" style="font-size:14px" onclick="delPeptideLog('${r.id}')">×</span></span></div>`).join('')||'No entries yet.'}</div>`;
+    } else {
+      body+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+        <div style="font-size:13px;color:var(--muted)">Taken today</div>
+        <div class="pill-check ${S.peptideChecks[p.id]?'done':''}" onclick="togglePeptideCheck('${p.id}')">${S.peptideChecks[p.id]?'✓':''}</div>
+      </div>`;
+    }
+    body+=`<div class="pep-remove" onclick="removePeptide('${p.id}')">Remove peptide ✕</div></div>`;
+    return html+body;
+  }).join('')||'<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">No peptides added yet.</div>';
+}
+
 // ─── CHAT ─────────────────────────────────────────────────────────────────────
 function autoSize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px';}
 function chatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
 function buildSys(){
   const p=S.profile,t=getTotals();
   const suppLines=(S.supplements||[]).map(s=>`${s.name} (${s.dose})`).join(', ');
+  const peptideLines=(S.peptides||[]).map(pep=>pep.dosing.type==='titration'?`${pep.name} (titrating, week ${getPeptideWeek(pep)}/${pep.dosing.schedule.length})`:`${pep.name} (${pep.dosing.doseLabel})`).join('; ');
   return `You are Lauren's personal wellness assistant. Lauren: female, height ${p?p.height:158}cm, current ~${S.weights.length?S.weights[S.weights.length-1].weight:(p?p.current:'unknown')}kg, goal ${p?p.goal:'unknown'}kg.
 
 CRITICAL ALLERGY: Lauren is ANAPHYLACTIC to soy protein. She has had two hospital-level reactions. She carries an EpiPen. Always flag any food or supplement that may contain soy protein, soy lecithin, or soy derivatives. Exception: fermented soy products (soy sauce, miso, tempeh) are generally tolerated as fermentation breaks down the allergenic proteins. Trace contamination ("may contain soy") has caused inconsistent reactions — treat with caution.
 
 Current supplements: ${suppLines||'none'}.
+Peptides in use: ${peptideLines||'none'}.
 
 Today: ${t.cal} cal, ${t.pro}g protein (goal ${p?p.protein:184}g), ${t.fat}g fat, ${t.carb}g carbs, ${getWaterTotal()}ml water.
 
-Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food or supplement suggestion against the soy allergy before recommending it.`;
+Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food, supplement, or peptide suggestion against the soy allergy before recommending it.`;
 }
 async function sendChat(imgB64,imgType){
   const input=document.getElementById('chat-in'),text=input.value.trim();
@@ -1268,7 +1394,7 @@ async function handleChatPhoto(event){const file=event.target.files[0];if(!file)
 function appendMsg(role,text){const msgs=document.getElementById('chat-msgs'),now=new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}),d=document.createElement('div');d.className='msg msg-'+(role==='user'?'user':'ai');d.innerHTML=`<div class="msg-bubble">${text.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div><div class="msg-time">${now}</div>`;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}
 function appendLoading(){const msgs=document.getElementById('chat-msgs'),d=document.createElement('div');d.className='msg msg-ai';d.innerHTML='<div class="msg-bubble"><div class="dots"><span></span><span></span><span></span></div></div>';msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}
 
-function updateAll(){updateMacros();updateWater();updateMealsList();updateWeight();updateMovement();updateTrafficLight();renderSupps();updateSleepView();renderSleepHistory();}
+function updateAll(){updateMacros();updateWater();updateMealsList();updateWeight();updateMovement();updateTrafficLight();renderSupps();renderPeptides();updateSleepView();renderSleepHistory();}
 
 function addProteinShake(){
   const protein=+document.getElementById('pp-protein').value||23;
@@ -1415,6 +1541,9 @@ async function loadFromDrive(){
         S.weights = mergeById(S.weights, driveData.weights, 'w').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
         S.sleep = mergeById(S.sleep, driveData.sleep, 'sleep').sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
         S.supplements = mergeById(S.supplements, driveData.supplements, 'supplement');
+        S.peptides = mergeById(S.peptides, driveData.peptides, 'peptide');
+        S.peptideLogs = mergeById(S.peptideLogs, driveData.peptideLogs, 'pep_log').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
+        if(driveData.peptideChecks) S.peptideChecks = {...driveData.peptideChecks, ...S.peptideChecks}; // local completion taps win on conflict
         // Meals/water/movement now persist across every day, so they merge like any other dated log
         S.meals = mergeById(S.meals, driveData.meals, 'meal').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
         S.water = mergeById(S.water, driveData.water, 'water').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
@@ -1448,6 +1577,9 @@ async function syncToDrive(){
       weights: S.weights,
       sleep: S.sleep,
       supplements: S.supplements,
+      peptides: S.peptides,
+      peptideLogs: S.peptideLogs,
+      peptideChecks: S.peptideChecks,
       supps: S.supps,
       meals: S.meals,
       water: S.water,
