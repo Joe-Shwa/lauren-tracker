@@ -251,6 +251,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div><h1>Lauren's Wellness Tracker</h1><div class="date" id="h-date"></div></div>
     <div style="display:flex;gap:6px;align-items:center">
     <div id="sync-indicator" style="font-size:11px;background:rgba(255,255,255,0.15);border-radius:8px;padding:3px 8px;cursor:pointer" onclick="handleSyncClick()">☁️ Connect Drive</div>
+    <div style="font-size:15px;background:rgba(255,255,255,0.15);border-radius:8px;padding:3px 8px;cursor:pointer" onclick="openSettings()" title="Settings">⚙️</div>
   </div>
   </div>
   <div class="header-stats">
@@ -265,10 +266,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="nav-tab active" onclick="showTab('today',this)"><span class="ti">📊</span>Today</div>
   <div class="nav-tab" onclick="showTab('log',this)"><span class="ti">🍽️</span>Log</div>
   <div class="nav-tab" onclick="showTab('movement',this)"><span class="ti">🏃</span>Move</div>
-  <div class="nav-tab" onclick="showTab('weight',this)"><span class="ti">⚖️</span>Weight</div>
-  <div class="nav-tab" onclick="showTab('sleep',this)"><span class="ti">😴</span>Sleep</div>
-  <div class="nav-tab" onclick="showTab('supps',this)"><span class="ti">💊</span>Supps</div>
-  <div class="nav-tab" onclick="showTab('ask',this)"><span class="ti">💬</span>Ask</div>
+  <div class="nav-tab" id="nav-weight" onclick="showTab('weight',this)"><span class="ti">⚖️</span>Weight</div>
+  <div class="nav-tab" id="nav-sleep" onclick="showTab('sleep',this)"><span class="ti">😴</span>Sleep</div>
+  <div class="nav-tab" id="nav-supps" onclick="showTab('supps',this)"><span class="ti">💊</span>Supps</div>
+  <div class="nav-tab" id="nav-ask" onclick="showTab('ask',this)"><span class="ti">💬</span>Ask</div>
+</div>
+
+<!-- SETTINGS -->
+<div class="overlay hidden" id="settings-overlay">
+  <div class="overlay-card">
+    <h2>⚙️ Settings</h2>
+    <p style="margin-bottom:14px">Today, Log, and Move are always on. Turn the others on or off to keep things simple — nothing gets deleted, just hidden.</p>
+    <div id="settings-tab-list"></div>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="closeSettings()">Done</button>
+  </div>
 </div>
 
 <!-- EDIT-DAY BANNER — visible on every tab whenever you've paged to a past day -->
@@ -557,6 +568,7 @@ let S = {
   sleep: [],
   supps: {nac_am:false,curcumin:false,nac_pm:false,reta:false,ta1:false},
   supplements: null,
+  settings: {tabs:{weight:true,sleep:true,supps:true,ask:true}},
   tombstones: []
 };
 let chatHistory = [];
@@ -588,6 +600,9 @@ function migrateArr(arr,prefix,dateField){
 }
 function migrateState(){
   if(!S.tombstones)S.tombstones=[];
+  if(!S.settings)S.settings={tabs:{weight:true,sleep:true,supps:true,ask:true}};
+  if(!S.settings.tabs)S.settings.tabs={weight:true,sleep:true,supps:true,ask:true};
+  ['weight','sleep','supps','ask'].forEach(k=>{if(typeof S.settings.tabs[k]!=='boolean')S.settings.tabs[k]=true;});
   // Migrate meals/water from the old "today only" storage into permanent dated logs
   if(!S.meals)S.meals=[];
   if(!S.water)S.water=[];
@@ -668,7 +683,48 @@ function checkDayReset(){
   }
 }
 function updateDate(){const el=document.getElementById('h-date');if(el)el.textContent=new Date().toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'long'});}
-function showApp(){document.getElementById('setup-overlay').classList.add('hidden');document.getElementById('allergy-banner').classList.remove('hidden');document.getElementById('main-header').classList.remove('hidden');document.getElementById('main-nav').classList.remove('hidden');document.querySelectorAll('.section').forEach(s=>s.classList.remove('hidden'));}
+function showApp(){document.getElementById('setup-overlay').classList.add('hidden');document.getElementById('allergy-banner').classList.remove('hidden');document.getElementById('main-header').classList.remove('hidden');document.getElementById('main-nav').classList.remove('hidden');document.querySelectorAll('.section').forEach(s=>s.classList.remove('hidden'));applyTabSettings();}
+
+// ─── SETTINGS (which tabs are visible — Today/Log/Move always on) ────────────
+const OPTIONAL_TABS=[
+  {key:'weight',label:'⚖️ Weight'},
+  {key:'sleep',label:'😴 Sleep'},
+  {key:'supps',label:'💊 Supps'},
+  {key:'ask',label:'💬 Ask'}
+];
+function openSettings(){renderSettingsPanel();document.getElementById('settings-overlay').classList.remove('hidden');}
+function closeSettings(){document.getElementById('settings-overlay').classList.add('hidden');}
+function renderSettingsPanel(){
+  const el=document.getElementById('settings-tab-list');
+  el.innerHTML=OPTIONAL_TABS.map(t=>`
+    <div class="pill-row">
+      <div class="pill-name">${t.label}</div>
+      <div class="pill-check ${S.settings.tabs[t.key]?'done':''}" onclick="toggleTabSetting('${t.key}')">${S.settings.tabs[t.key]?'✓':''}</div>
+    </div>`).join('');
+}
+function toggleTabSetting(key){
+  S.settings.tabs[key]=!S.settings.tabs[key];
+  saveLocal();
+  renderSettingsPanel();
+  applyTabSettings();
+}
+// Shows/hides nav-tabs and their sections based on saved settings. If the tab you're currently on gets
+// switched off, bumps you back to Today so you're never left staring at a hidden, blank screen.
+function applyTabSettings(){
+  if(!S.settings||!S.settings.tabs)return;
+  let activeWasHidden=false;
+  OPTIONAL_TABS.forEach(t=>{
+    const on=S.settings.tabs[t.key];
+    const navEl=document.getElementById('nav-'+t.key);
+    const sectionEl=document.getElementById('tab-'+t.key);
+    if(navEl)navEl.classList.toggle('hidden',!on);
+    if(sectionEl){
+      sectionEl.classList.toggle('hidden',!on);
+      if(!on && sectionEl.classList.contains('active'))activeWasHidden=true;
+    }
+  });
+  if(activeWasHidden)showTab('today',document.querySelector('.nav-tab[onclick*="\'today\'"]'));
+}
 
 // ─── SETUP ────────────────────────────────────────────────────────────────────
 function nextSetup(n){document.querySelectorAll('.setup-step').forEach(s=>s.classList.remove('active'));document.getElementById('setup-s'+n).classList.add('active');}
@@ -1373,9 +1429,11 @@ async function loadFromDrive(){
           if(driveData.supps) S.supps = {...driveData.supps, ...S.supps}; // local completion taps win on conflict
         }
         if(driveData.profile) S.profile = driveData.profile;
+        if(driveData.settings && driveData.settings.tabs) S.settings.tabs = {...driveData.settings.tabs, ...S.settings.tabs}; // local choice wins on conflict
         saveLocal();
         updateAll();
         updateOtherLogs();
+        applyTabSettings();
       }
     }
   }catch(e){ console.error('Load from Drive error:', e); }
@@ -1395,6 +1453,7 @@ async function syncToDrive(){
       water: S.water,
       movement: S.movement,
       streak: S.streak,
+      settings: S.settings,
       today: S.today,
       tombstones: S.tombstones,
       lastSync: new Date().toISOString()
