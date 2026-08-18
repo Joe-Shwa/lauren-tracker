@@ -147,6 +147,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .pep-body { background: var(--white); border: 1px solid var(--border); border-top: none; border-radius: 0 0 12px 12px; padding: 14px; margin: -12px 0 12px; box-shadow: var(--shadow); }
 .pep-caution { background: var(--amber-pale); border-left: 3px solid var(--amber); border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.6; margin-bottom: 10px; color: var(--dark); }
 .pep-remove { font-size: 12px; color: var(--red); cursor: pointer; text-align:right; margin-top:8px; }
+.pep-edit { font-size: 12px; color: var(--blue); cursor: pointer; text-align:left; margin-top:8px; }
 
 .chat-wrap { background: var(--white); border-radius: 14px; border: 1px solid var(--border); box-shadow: var(--shadow); display: flex; flex-direction: column; height: calc(100vh - 230px); min-height: 320px; overflow: hidden; }
 .chat-msgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -550,7 +551,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div class="form-group"><div class="input-label">Dose / timing (as you'd say it)</div><input class="input-field" id="pep-dose" placeholder="e.g. 250mcg subcutaneous daily"></div>
     <div class="form-group"><div class="input-label">Purpose &amp; cautions — leave blank to auto-fill</div><input class="input-field" id="pep-purpose" placeholder="Optional — I'll look it up if left blank"></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:10px"><input type="checkbox" id="pep-appetite"> Suppresses appetite (affects protein-goal messaging)</label>
-    <button class="btn btn-primary btn-sm" style="width:auto" onclick="addPeptide()">Add ✓</button>
+    <button class="btn btn-primary btn-sm" id="pep-save-btn" style="width:auto" onclick="addPeptide()">Add ✓</button>
+    <button class="btn btn-secondary btn-sm hidden" id="pep-cancel-btn" style="width:auto;margin-left:8px" onclick="cancelPeptideEdit()">Cancel edit</button>
   </div>
 </div>
 
@@ -562,10 +564,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
     </div>
     <div class="chat-input-area">
-      <button class="chat-cam" onclick="document.getElementById('chat-ph-camera').click()" title="Take photo">📷</button>
-      <button class="chat-cam" onclick="document.getElementById('chat-ph-gallery').click()" title="Choose from gallery">🖼️</button>
-      <input type="file" id="chat-ph-camera" accept="image/*" capture="environment" class="hidden" onchange="handleChatPhoto(event)">
-      <input type="file" id="chat-ph-gallery" accept="image/*" class="hidden" onchange="handleChatPhoto(event)">
+      <button class="chat-cam" onclick="document.getElementById('chat-ph').click()">📷</button>
+      <input type="file" id="chat-ph" accept="image/*"  class="hidden" onchange="handleChatPhoto(event)">
       <textarea class="chat-input" id="chat-in" placeholder="Ask anything..." rows="1" onkeydown="chatKey(event)" oninput="autoSize(this)"></textarea>
       <button class="chat-send" id="chat-btn" onclick="sendChat()">➤</button>
     </div>
@@ -589,7 +589,6 @@ let S = {
   peptideLogs: null,
   peptideChecks: null,
   settings: {tabs:{weight:true,sleep:true,supps:true,peptides:false,ask:true}},
-  chatHistory: [],
   tombstones: []
 };
 let chatHistory = [];
@@ -622,7 +621,6 @@ function migrateArr(arr,prefix,dateField){
 }
 function migrateState(){
   if(!S.tombstones)S.tombstones=[];
-  if(!S.chatHistory)S.chatHistory=[];
   if(!S.settings)S.settings={tabs:{weight:true,sleep:true,supps:true,peptides:false,ask:true}};
   if(!S.settings.tabs)S.settings.tabs={weight:true,sleep:true,supps:true,peptides:false,ask:true};
   ['weight','sleep','supps','ask'].forEach(k=>{if(typeof S.settings.tabs[k]!=='boolean')S.settings.tabs[k]=true;});
@@ -693,7 +691,6 @@ const SUPPS = [
 window.onload = () => {
   loadLocal(); updateDate(); renderQuickAdd(); checkDayReset();
   if(S.profile){showApp();renderViewDate();}
-  renderChatHistory();
 };
 function loadLocal(){try{const d=localStorage.getItem('lauren_tracker_v1');if(d)S={...S,...JSON.parse(d)};}catch(e){}migrateState();}
 function saveLocal(){
@@ -1280,11 +1277,32 @@ function logPeptideDose(id){
 }
 function delPeptideLog(id){S.peptideLogs=S.peptideLogs.filter(l=>l.id!==id);markDeleted('pep_log',id);saveLocal();renderPeptides();}
 function removePeptide(id){
+  if(peptideEditId===id)cancelPeptideEdit();
   S.peptides=S.peptides.filter(p=>p.id!==id);
   S.peptideLogs=S.peptideLogs.filter(l=>l.peptideId!==id);
   delete S.peptideChecks[id];
   markDeleted('peptide',id);
   saveLocal();renderPeptides();
+}
+let peptideEditId=null;
+function editPeptide(id){
+  const p=S.peptides.find(x=>x.id===id);
+  if(!p||p.dosing.type!=='fixed'){alert('Only peptides added through this form can be edited here — titration schedules need to be removed and re-added.');return;}
+  peptideEditId=id;
+  document.getElementById('pep-name').value=p.name;
+  document.getElementById('pep-dose').value=p.dosing.doseLabel==='As directed'?'':p.dosing.doseLabel;
+  document.getElementById('pep-purpose').value=p.purpose||'';
+  document.getElementById('pep-appetite').checked=!!p.affectsAppetite;
+  document.getElementById('pep-save-btn').textContent='Update ✓';
+  document.getElementById('pep-cancel-btn').classList.remove('hidden');
+  document.getElementById('pep-name').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelPeptideEdit(){
+  peptideEditId=null;
+  document.getElementById('pep-save-btn').textContent='Add ✓';
+  document.getElementById('pep-cancel-btn').classList.add('hidden');
+  ['pep-name','pep-dose','pep-purpose'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('pep-appetite').checked=false;
 }
 async function addPeptide(){
   const name=document.getElementById('pep-name').value.trim();
@@ -1292,6 +1310,21 @@ async function addPeptide(){
   const purposeInput=document.getElementById('pep-purpose').value.trim();
   const appetite=document.getElementById('pep-appetite').checked;
   if(!name)return;
+
+  if(peptideEditId){
+    const idx=S.peptides.findIndex(x=>x.id===peptideEditId);
+    if(idx===-1){cancelPeptideEdit();return;}
+    const id=peptideEditId;
+    S.peptides[idx]={...S.peptides[idx],name,affectsAppetite:appetite,updatedAt:Date.now(),dosing:{...S.peptides[idx].dosing,doseLabel:dose||'As directed'}};
+    if(purposeInput)S.peptides[idx].purpose=purposeInput;
+    saveLocal();renderPeptides();
+    cancelPeptideEdit();
+    if(!purposeInput && !S.peptides[idx].purpose){
+      await runPeptideLookup(id,name,dose);
+    }
+    return;
+  }
+
   const id=newId('pep');
   S.peptides.push({id,name,custom:true,updatedAt:Date.now(),purpose:purposeInput,cautions:[],evidence:'',affectsAppetite:appetite,tracking:'checklist',dosing:{type:'fixed',doseLabel:dose||'As directed',frequency:''}});
   S.peptideChecks[id]=false;
@@ -1299,10 +1332,33 @@ async function addPeptide(){
   ['pep-name','pep-dose','pep-purpose'].forEach(i=>document.getElementById(i).value='');
   document.getElementById('pep-appetite').checked=false;
   if(!purposeInput){
-    const info=await fetchPeptideInfo(name,dose);
-    const idx=S.peptides.findIndex(x=>x.id===id);
-    if(idx>-1){S.peptides[idx].purpose=info.purpose||S.peptides[idx].purpose;S.peptides[idx].cautions=info.cautions||[];S.peptides[idx].evidence=info.evidence||'';S.peptides[idx].updatedAt=Date.now();saveLocal();renderPeptides();}
+    await runPeptideLookup(id,name,dose);
   }
+}
+// Wraps the lookup + write-back, and — unlike before — actually surfaces it when the lookup fails
+// instead of leaving the entry silently blank with no explanation.
+async function runPeptideLookup(id,name,dose){
+  const idx=S.peptides.findIndex(x=>x.id===id);
+  if(idx===-1)return;
+  const info=await fetchPeptideInfo(name,dose);
+  const stillIdx=S.peptides.findIndex(x=>x.id===id);
+  if(stillIdx===-1)return;
+  if(info.__failed){
+    S.peptides[stillIdx].lookupFailed=true;
+    saveLocal();renderPeptides();
+    return;
+  }
+  S.peptides[stillIdx].purpose=info.purpose||S.peptides[stillIdx].purpose;
+  S.peptides[stillIdx].cautions=info.cautions||[];
+  S.peptides[stillIdx].evidence=info.evidence||'';
+  S.peptides[stillIdx].lookupFailed=false;
+  S.peptides[stillIdx].updatedAt=Date.now();
+  saveLocal();renderPeptides();
+}
+function retryPeptideLookup(id){
+  const p=S.peptides.find(x=>x.id===id);
+  if(!p)return;
+  runPeptideLookup(id,p.name,p.dosing.doseLabel==='As directed'?'':p.dosing.doseLabel);
 }
 async function fetchPeptideInfo(name,dose){
   try{
@@ -1312,12 +1368,16 @@ async function fetchPeptideInfo(name,dose){
 Rules:
 - "cautions": at most 2, only genuinely relevant ones (timing, interactions, common side effects, or soy-derived excipients if applicable). Empty array if nothing notable.
 - "evidence": only fill this in if there's a meaningful gap between how long/widely a compound has been used in humans and how well that use is independently verified by modern Western trial standards. When it applies, state it as two short clauses: "Long clinical/use history in [region/context]; limited independent Western trial data" — never collapse into vague phrasing like "limited human data" alone. If the compound's evidence is well-established, or there's genuinely little human use of any kind, leave "evidence" as an empty string.`}]})});
+    if(!resp.ok){console.error('Peptide lookup HTTP error:',resp.status,await resp.text().catch(()=>''));return {__failed:true};}
     const data=await resp.json();
     const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
-    const info=JSON.parse(text.replace(/```json\n?|```/g,'').trim());
+    const jsonMatch=text.match(/\{[\s\S]*\}/);
+    if(!jsonMatch){console.error('Peptide lookup: no JSON found in reply:',text);return {__failed:true};}
+    const info=JSON.parse(jsonMatch[0]);
     if(!info.evidence)info.evidence='';
+    if(!info.cautions)info.cautions=[];
     return info;
-  }catch(e){return {purpose:'',cautions:[],evidence:''};}
+  }catch(e){console.error('Peptide lookup error:',e);return {__failed:true};}
 }
 function renderPeptides(){
   const el=document.getElementById('peptide-list');if(!el)return;
@@ -1334,6 +1394,12 @@ function renderPeptides(){
     </div>`;
     if(!expanded)return html;
     let body=`<div class="pep-body" onclick="event.stopPropagation()">`;
+    if(p.lookupFailed && !p.purpose){
+      body+=`<div class="pep-caution" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span>⚠️ Auto-lookup didn't come back — tap to retry, or edit it in manually.</span>
+        <span class="meal-del" style="font-size:16px;flex-shrink:0" onclick="retryPeptideLookup('${p.id}')" title="Retry lookup">🔄</span>
+      </div>`;
+    }
     (p.cautions||[]).forEach(c=>{body+=`<div class="pep-caution">⚠️ ${c}</div>`;});
     if(p.evidence){body+=`<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">📋 ${p.evidence}</div>`;}
     if(p.dosing.type==='titration'){
@@ -1355,12 +1421,17 @@ function renderPeptides(){
         <div class="pill-check ${S.peptideChecks[p.id]?'done':''}" onclick="togglePeptideCheck('${p.id}')">${S.peptideChecks[p.id]?'✓':''}</div>
       </div>`;
     }
-    body+=`<div class="pep-remove" onclick="removePeptide('${p.id}')">Remove peptide ✕</div></div>`;
+    body+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">`;
+    body+=p.dosing.type==='fixed'?`<span class="pep-edit" onclick="editPeptide('${p.id}')">Edit ✎</span>`:'<span></span>';
+    body+=`<span class="pep-remove" style="margin:0" onclick="removePeptide('${p.id}')">Remove ✕</span>`;
+    body+=`</div></div>`;
     return html+body;
   }).join('')||'<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">No peptides added yet.</div>';
 }
 
 // ─── CHAT ─────────────────────────────────────────────────────────────────────
+function autoSize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px';}
+function chatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
 function buildSys(){
   const p=S.profile,t=getTotals();
   const suppLines=(S.supplements||[]).map(s=>`${s.name} (${s.dose})`).join(', ');
@@ -1372,137 +1443,30 @@ CRITICAL ALLERGY: Lauren is ANAPHYLACTIC to soy protein. She has had two hospita
 Current supplements: ${suppLines||'none'}.
 Peptides in use: ${peptideLines||'none'}.
 
-${buildDataSummary()}
+Today: ${t.cal} cal, ${t.pro}g protein (goal ${p?p.protein:184}g), ${t.fat}g fat, ${t.carb}g carbs, ${getWaterTotal()}ml water.
 
-Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food, supplement, or peptide suggestion against the soy allergy before recommending it.
-
-${ACTION_PROTOCOL}`;
+Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food, supplement, or peptide suggestion against the soy allergy before recommending it.`;
 }
-
-// Rolls up the last 7 days across every tracked metric, plus today's meals in full detail —
-// gives the chat assistant real visibility instead of just today's totals.
-function buildDataSummary(){
-  const days=[];
-  for(let i=0;i<7;i++){
-    const d=new Date();d.setDate(d.getDate()-i);
-    const ds=d.toDateString();
-    const t=totalsForDate(ds),w=waterTotalForDate(ds),mv=movementForDate(ds),sl=sleepForDate(ds),wt=weightForDate(ds);
-    const hasAny=t.cal||w||mv||sl||wt;
-    if(!hasAny&&i>0)continue; // skip empty older days to keep this compact, but always show today even if empty
-    days.push(`${i===0?'Today':ds}: ${Math.round(t.cal)} cal, ${Math.round(t.pro)}g pro, ${Math.round(t.fat)}g fat, ${Math.round(t.carb)}g carb, ${w}ml water${mv?`, ${mv.steps} steps/${mv.calBurned} cal burned`:''}${sl?`, sleep ${sl.total}h (${sl.deep}m deep/${sl.rem}m REM)`:''}${wt?`, weighed ${wt.weight}kg`:''}`);
-  }
-  const weightLines=[...S.weights].slice(-5).map(w=>`${w.date}: ${w.weight}kg`).join('; ');
-  const todayMeals=mealsForDate(S.today.date).map(m=>`${m.time||''} ${m.emoji||''} ${m.name} (${m.cal}cal/${m.pro}g pro/${m.fat}g fat/${m.carb}g carb)`).join('; ')||'none logged yet';
-  return `Last 7 days:\n${days.join('\n')}\n\nRecent weight entries: ${weightLines||'none'}\nCurrent streak: ${S.streak?.count||0} days (longest: ${S.streak?.longest||0})\n\nToday's meals in full: ${todayMeals}`;
-}
-
-// Instructs the model on how to write back to the tracker via chat, and defines the exact
-// wire format the client parses out of the reply to actually perform the write.
-const ACTION_PROTOCOL=`If Lauren clearly and explicitly asks you to log/add/record/track something (a meal, water, weight, steps/movement, or sleep), do it by including an action block in your reply — don't just tell her to go add it herself. Format, one per item, anywhere in your reply:
-[ACTION:log_meal]{"name":"...","cal":N,"pro":N,"fat":N,"carb":N,"emoji":"one emoji","soy_risk":boolean}[/ACTION]
-[ACTION:log_water]{"ml":N}[/ACTION]
-[ACTION:log_weight]{"weight":N}[/ACTION]
-[ACTION:log_movement]{"steps":N,"calBurned":N}[/ACTION]
-[ACTION:log_sleep]{"total":N,"deep":N,"rem":N,"notes":"..."}[/ACTION]
-(total/deep/rem in hours/minutes respectively, matching how they're entered elsewhere in the app.)
-Estimate macros for a described meal the same way you would for a normal food lookup — reasonable confidence is fine, cooked weight assumed. Set soy_risk true only if the meal clearly contains non-fermented soy. Only emit an action block when she has actually asked you to log something, never just because food or activity was mentioned in passing. If what she wants logged is too vague to estimate at all, ask a clarifying question instead of guessing wildly. You can emit more than one action block if she's asked to log several things at once. Keep your normal reply text short when you've logged something — a brief natural confirmation is enough, the app will also show its own confirmation.`;
-
-// ─── CHAT ACTIONS (lets the assistant write to the tracker, not just read it) ────────────
-function chatLogWeight(w){
-  if(!w)return;
-  const entry={id:newId('w'),updatedAt:Date.now(),date:viewDateStr(),weight:w};
-  const idx=S.weights.findIndex(e=>new Date(e.date)>new Date(entry.date));
-  if(idx===-1)S.weights.push(entry);else S.weights.splice(idx,0,entry);
-  if(S.weights.length>90)S.weights=S.weights.slice(-90);
-  saveLocal();updateWeight();
-}
-function chatLogMovement(steps,calBurned){
-  const existing=movementForDate(viewDateStr());
-  if(existing){existing.steps=steps||existing.steps;existing.calBurned=calBurned||existing.calBurned;existing.updatedAt=Date.now();}
-  else{S.movement.push({id:newId('movement'),updatedAt:Date.now(),date:viewDateStr(),steps:steps||0,calBurned:calBurned||0});}
-  saveLocal();updateMovement();updateTrafficLight();
-}
-function chatLogSleep(total,deep,rem,notes){
-  if(!total)return;
-  const existing=sleepForDate(viewDateStr());
-  if(existing){existing.total=total;existing.deep=deep||0;existing.rem=rem||0;existing.notes=notes||existing.notes;existing.updatedAt=Date.now();}
-  else{S.sleep.unshift({id:newId('sleep'),updatedAt:Date.now(),date:viewDateStr(),total,deep:deep||0,rem:rem||0,notes:notes||''});if(S.sleep.length>30)S.sleep=S.sleep.slice(0,30);}
-  saveLocal();updateSleepView();renderSleepHistory();
-}
-function executeChatAction(type,data){
-  try{
-    switch(type){
-      case 'log_meal':{
-        addMeal({name:data.name||'Logged via chat',cal:+data.cal||0,pro:+data.pro||0,fat:+data.fat||0,carb:+data.carb||0,emoji:data.emoji||'🍽️'});
-        const soyNote=data.soy_risk?' ⚠️ Possible soy content — double-check before eating.':'';
-        return `✅ Logged: ${data.emoji||'🍽️'} ${data.name} — ${Math.round(+data.cal||0)} cal, ${Math.round(+data.pro||0)}g protein.${soyNote}`;
-      }
-      case 'log_water':
-        addWater(+data.ml||0);
-        return `✅ Logged: 💧 ${+data.ml||0}ml water`;
-      case 'log_weight':
-        chatLogWeight(+data.weight||0);
-        return `✅ Logged: ⚖️ ${data.weight}kg`;
-      case 'log_movement':
-        chatLogMovement(+data.steps||0,+data.calBurned||0);
-        return `✅ Logged: 🏃 ${data.steps||0} steps, ${data.calBurned||0} cal burned`;
-      case 'log_sleep':
-        chatLogSleep(+data.total||0,+data.deep||0,+data.rem||0,data.notes||'');
-        return `✅ Logged: 😴 ${data.total}h sleep`;
-      default:
-        return null;
-    }
-  }catch(e){console.error('chat action error',e);return '⚠️ Tried to log that but something went wrong — add it manually to be safe.';}
-}
-
-function autoSize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px';}
-function chatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
 async function sendChat(imgB64,imgType){
   const input=document.getElementById('chat-in'),text=input.value.trim();
   if(!text&&!imgB64)return;
   const content=[];if(imgB64)content.push({type:'image',source:{type:'base64',media_type:imgType,data:imgB64}});if(text)content.push({type:'text',text});
   appendMsg('user',text||(imgB64?'📷 [Photo]':''));input.value='';input.style.height='auto';
   document.getElementById('chat-btn').disabled=true;const loading=appendLoading();
-  const currentUserMsg={role:'user',content:content.length===1&&content[0].type==='text'?text:content};
+  chatHistory.push({role:'user',content:content.length===1&&content[0].type==='text'?text:content});
   try{
-    const msgs=[{role:'user',content:'System: '+buildSys()},{role:'assistant',content:'Ready to help.'},...chatHistory,currentUserMsg];
+    const msgs=[{role:'user',content:'System: '+buildSys()},{role:'assistant',content:'Ready to help.'},...chatHistory];
     const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:800,messages:msgs})});
     const data=await resp.json();
-    let reply=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
-    // Parse and execute any action blocks, then strip them from what's actually shown
-    const actionRegex=/\[ACTION:(\w+)\](\{[\s\S]*?\})\[\/ACTION\]/g;
-    const confirmations=[];let m;
-    while((m=actionRegex.exec(reply))!==null){
-      try{const parsed=JSON.parse(m[2]);const conf=executeChatAction(m[1],parsed);if(conf)confirmations.push(conf);}
-      catch(err){console.error('action parse error',err);}
-    }
-    let cleanReply=reply.replace(actionRegex,'').trim();
-    if(confirmations.length)cleanReply=(cleanReply?cleanReply+'\n\n':'')+confirmations.join('\n');
-    loading.remove();appendMsg('ai',cleanReply);
-    // Store text-only versions for history/context — images aren't resent on later turns, keeps payload sane and survives reload
-    chatHistory.push({role:'user',content:text||'[Photo attached]'});
-    chatHistory.push({role:'assistant',content:cleanReply});
-    if(chatHistory.length>40)chatHistory=chatHistory.slice(-40);
-    S.chatHistory=chatHistory;
-    saveLocal();
-    if(confirmations.length){updateAll();updateTrafficLight();}
+    const reply=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
+    loading.remove();appendMsg('ai',reply);chatHistory.push({role:'assistant',content:reply});
+    if(chatHistory.length>20)chatHistory=chatHistory.slice(-20);
   }catch(e){loading.remove();appendMsg('ai',"Can't connect right now. Try again.");}
   document.getElementById('chat-btn').disabled=false;
 }
 async function handleChatPhoto(event){const file=event.target.files[0];if(!file)return;const r=new FileReader();r.onload=async e=>{await sendChat(e.target.result.split(',')[1],file.type);};r.readAsDataURL(file);event.target.value='';}
 function appendMsg(role,text){const msgs=document.getElementById('chat-msgs'),now=new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}),d=document.createElement('div');d.className='msg msg-'+(role==='user'?'user':'ai');d.innerHTML=`<div class="msg-bubble">${text.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div><div class="msg-time">${now}</div>`;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}
 function appendLoading(){const msgs=document.getElementById('chat-msgs'),d=document.createElement('div');d.className='msg msg-ai';d.innerHTML='<div class="msg-bubble"><div class="dots"><span></span><span></span><span></span></div></div>';msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}
-// Replays saved chat history into the chat window on load, so a conversation survives a reload/reopen
-function renderChatHistory(){
-  if(!S.chatHistory||!S.chatHistory.length)return;
-  chatHistory=S.chatHistory.slice();
-  const msgsEl=document.getElementById('chat-msgs');
-  while(msgsEl.children.length>1)msgsEl.removeChild(msgsEl.lastChild);
-  chatHistory.forEach(msg=>{
-    const text=typeof msg.content==='string'?msg.content:'[Photo attached]';
-    appendMsg(msg.role==='user'?'user':'ai',text);
-  });
-}
 
 function updateAll(){updateMacros();updateWater();updateMealsList();updateWeight();updateMovement();updateTrafficLight();renderSupps();renderPeptides();updateSleepView();renderSleepHistory();}
 
@@ -1669,12 +1633,6 @@ async function loadFromDrive(){
         }
         if(driveData.profile) S.profile = driveData.profile;
         if(driveData.settings && driveData.settings.tabs) S.settings.tabs = {...driveData.settings.tabs, ...S.settings.tabs}; // local choice wins on conflict
-        // Chat is inherently sequential — take whichever history is longer rather than trying to interleave two divergent threads
-        if(driveData.chatHistory && driveData.chatHistory.length > (S.chatHistory||[]).length){
-          S.chatHistory = driveData.chatHistory;
-          chatHistory = S.chatHistory.slice();
-          renderChatHistory();
-        }
         saveLocal();
         updateAll();
         updateOtherLogs();
@@ -1696,7 +1654,6 @@ async function syncToDrive(){
       peptides: S.peptides,
       peptideLogs: S.peptideLogs,
       peptideChecks: S.peptideChecks,
-      chatHistory: S.chatHistory,
       supps: S.supps,
       meals: S.meals,
       water: S.water,
