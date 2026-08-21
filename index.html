@@ -645,6 +645,9 @@ function migrateState(){
   migrateArr(S.weights,'w');
   migrateArr(S.sleep,'sleep');
   migrateArr(S.meals,'meal','date');
+  // A past bug could store cal/pro/fat/carb as strings if the AI's JSON response quoted a number —
+  // force them back to real numbers so old corrupted entries stop producing absurd totals
+  S.meals.forEach(m=>{m.cal=+m.cal||0;m.pro=+m.pro||0;m.fat=+m.fat||0;m.carb=+m.carb||0;});
   migrateArr(S.water,'water','date');
   if(!S.movement)S.movement=[];
   migrateArr(S.movement,'movement','date');
@@ -809,7 +812,7 @@ function waterForDate(dateStr){return S.water.filter(w=>w.date===dateStr);}
 function movementForDate(dateStr){return S.movement.find(m=>m.date===dateStr)||null;}
 function sleepForDate(dateStr){return S.sleep.find(s=>s.date===dateStr)||null;}
 function weightForDate(dateStr){return S.weights.find(w=>w.date===dateStr)||null;}
-function totalsForDate(dateStr){return mealsForDate(dateStr).reduce((a,m)=>({cal:a.cal+(m.cal||0),pro:a.pro+(m.pro||0),fat:a.fat+(m.fat||0),carb:a.carb+(m.carb||0)}),{cal:0,pro:0,fat:0,carb:0});}
+function totalsForDate(dateStr){return mealsForDate(dateStr).reduce((a,m)=>({cal:a.cal+(+m.cal||0),pro:a.pro+(+m.pro||0),fat:a.fat+(+m.fat||0),carb:a.carb+(+m.carb||0)}),{cal:0,pro:0,fat:0,carb:0});}
 function waterTotalForDate(dateStr){return waterForDate(dateStr).reduce((a,w)=>a+(w.ml||0),0);}
 
 // ─── MACROS ───────────────────────────────────────────────────────────────────
@@ -917,6 +920,7 @@ async function doLookup(){
     const data=await resp.json();
     const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
     const clean=text.replace(/```json\n?|```/g,'').trim();const meal=JSON.parse(clean);
+    meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
     lookupPending=meal;
     loading.classList.add('hidden');
     document.getElementById('lr-name').textContent=meal.emoji+' '+meal.name;
@@ -973,6 +977,7 @@ async function handleMealPhoto(event){
       const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
       const clean=text.replace(/```json\n?|```/g,'').trim();
       const meal=JSON.parse(clean);
+      meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
       loading.classList.add('hidden');
       result.innerHTML=`<div style="padding:8px 0"><div style="font-size:14px;font-weight:700;margin-bottom:6px">${meal.emoji} ${meal.name}</div><div style="margin-bottom:6px"><span class="tag">🔥 ${meal.cal} cal</span><span class="tag" style="background:#ECFDF5;color:#10B981">💪 ${meal.pro}g protein</span><span class="tag" style="background:#FFFBEB;color:#F59E0B">🥑 ${meal.fat}g fat</span><span class="tag" style="background:#EFF6FF;color:#3B82F6">🍝 ${meal.carb}g carbs</span></div>${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given your anaphylactic soy allergy.</div>':''}<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${meal.note}</div><button class="btn btn-primary btn-sm" style="width:auto;margin-right:8px" onclick='logPhotoMeal(${JSON.stringify(meal)})'>Add to today ✓</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden')">Cancel</button></div>`;
     }catch(e){
@@ -1468,7 +1473,12 @@ async function handleChatPhoto(event){const file=event.target.files[0];if(!file)
 function appendMsg(role,text){const msgs=document.getElementById('chat-msgs'),now=new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}),d=document.createElement('div');d.className='msg msg-'+(role==='user'?'user':'ai');d.innerHTML=`<div class="msg-bubble">${text.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div><div class="msg-time">${now}</div>`;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}
 function appendLoading(){const msgs=document.getElementById('chat-msgs'),d=document.createElement('div');d.className='msg msg-ai';d.innerHTML='<div class="msg-bubble"><div class="dots"><span></span><span></span><span></span></div></div>';msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}
 
-function updateAll(){updateMacros();updateWater();updateMealsList();updateWeight();updateMovement();updateTrafficLight();renderSupps();renderPeptides();updateSleepView();renderSleepHistory();}
+// Each piece runs independently now — if one throws on bad data, the rest of the tab still renders
+// instead of the whole day silently going blank (which is what a single chained call would do).
+function updateAll(){
+  const steps=[updateMacros,updateWater,updateMealsList,updateWeight,updateMovement,updateTrafficLight,renderSupps,renderPeptides,updateSleepView,renderSleepHistory];
+  steps.forEach(fn=>{ try{ fn(); }catch(e){ console.error('updateAll: '+fn.name+' failed:',e); } });
+}
 
 function addProteinShake(){
   const protein=+document.getElementById('pp-protein').value||23;
