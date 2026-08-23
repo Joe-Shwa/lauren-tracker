@@ -643,6 +643,19 @@ function migrateState(){
   }
   if(S.today) delete S.today.water;
   migrateArr(S.weights,'w');
+  // Collapse duplicate weight entries for the same date — a past bug in logWeight() created a new
+  // row every time instead of updating the existing one for that day. Keep whichever duplicate has
+  // the newest updatedAt.
+  {
+    const byDate=new Map();
+    S.weights.forEach(w=>{
+      const cur=byDate.get(w.date);
+      if(!cur || (w.updatedAt||0) > (cur.updatedAt||0)) byDate.set(w.date, w);
+    });
+    if(byDate.size < S.weights.length){
+      S.weights = [...byDate.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
+    }
+  }
   migrateArr(S.sleep,'sleep');
   migrateArr(S.meals,'meal','date');
   // A past bug could store cal/pro/fat/carb as strings if the AI's JSON response quoted a number —
@@ -995,10 +1008,16 @@ function logPhotoMeal(m){addMeal(m);document.getElementById('ph-preview').classL
 // ─── WEIGHT ───────────────────────────────────────────────────────────────────
 function logWeight(){
   const w=parseFloat(document.getElementById('w-input').value);if(!w)return;
-  const entry={id:newId('w'),updatedAt:Date.now(),date:viewDateStr(),weight:w};
-  // Insert in chronological order so backdated entries don't get mistaken for the latest
-  const idx=S.weights.findIndex(e=>new Date(e.date)>new Date(entry.date));
-  if(idx===-1)S.weights.push(entry);else S.weights.splice(idx,0,entry);
+  const dateStr=viewDateStr();
+  const existing=weightForDate(dateStr);
+  if(existing){
+    existing.weight=w; existing.updatedAt=Date.now();
+  } else {
+    const entry={id:newId('w'),updatedAt:Date.now(),date:dateStr,weight:w};
+    // Insert in chronological order so backdated entries don't get mistaken for the latest
+    const idx=S.weights.findIndex(e=>new Date(e.date)>new Date(entry.date));
+    if(idx===-1)S.weights.push(entry);else S.weights.splice(idx,0,entry);
+  }
   if(S.weights.length>90)S.weights=S.weights.slice(-90);
   saveLocal();updateWeight();document.getElementById('w-input').value='';
 }
@@ -1028,7 +1047,7 @@ function updateWeight(){
   const rem=latest-goal;
   document.getElementById('prog-txt').textContent=rem>0?rem.toFixed(1)+' kg to goal':'🎉 Goal reached!';
   document.getElementById('w-advice').innerHTML=rem>0?`At 0.4kg/week, roughly <strong>${Math.round(rem/0.4)} weeks</strong> to reach ${goal}kg. Reta will accelerate that as dose increases.`:`🏆 Goal reached.`;
-  document.getElementById('w-history').innerHTML=[...S.weights].reverse().slice(0,10).map(e=>`<div class="history-row"><span>${e.date}</span><span style="font-weight:700">${e.weight} kg</span></div>`).join('')||'No entries yet.';
+  document.getElementById('w-history').innerHTML=[...S.weights].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10).map(e=>`<div class="history-row"><span>${e.date}</span><span style="font-weight:700">${e.weight} kg</span></div>`).join('')||'No entries yet.';
 }
 
 // ─── SLEEP ────────────────────────────────────────────────────────────────────
@@ -1110,7 +1129,8 @@ function fmtHM(decHrs){const t=minsToHM(decHrs*60);return (t.h?t.h+'h ':'')+t.m+
 function fmtMins(mins){const t=minsToHM(mins);return (t.h?t.h+'h ':'')+t.m+'m';}
 function renderSleepHistory(){
   const el=document.getElementById('sl-history');if(!el)return;
-  el.innerHTML=S.sleep.slice(0,7).map(sl=>`<div class="history-row"><span style="color:var(--muted)">${sl.date}${sl.notes?' · '+sl.notes:''}</span><span>${fmtHM(sl.total)} · ${fmtMins(sl.deep)} deep · ${fmtMins(sl.rem)} REM <span class="meal-del" style="font-size:15px" onclick="editSleep('${sl.id}')" title="Edit">✎</span><span class="meal-del" style="font-size:15px" onclick="delSleep('${sl.id}')" title="Delete">×</span></span></div>`).join('')||'No entries yet.';
+  const recent=S.sleep.filter(sl=>isWithinLastNDays(sl.date,7)).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  el.innerHTML=recent.map(sl=>`<div class="history-row"><span style="color:var(--muted)">${sl.date}${sl.notes?' · '+sl.notes:''}</span><span>${fmtHM(sl.total)} · ${fmtMins(sl.deep)} deep · ${fmtMins(sl.rem)} REM <span class="meal-del" style="font-size:15px" onclick="editSleep('${sl.id}')" title="Edit">✎</span><span class="meal-del" style="font-size:15px" onclick="delSleep('${sl.id}')" title="Delete">×</span></span></div>`).join('')||'No entries in the last 7 days.';
 }
 
 // ─── MOVEMENT ─────────────────────────────────────────────────────────────────
@@ -1140,8 +1160,9 @@ function updateMovement(){
   if(cbEl)cbEl.textContent=today?today.calBurned.toLocaleString():'--';
   const hist=document.getElementById('mv-history');
   if(hist){
-    hist.innerHTML=[...S.movement].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10)
-      .map(m=>`<div class="history-row"><span style="color:var(--muted)">${m.date}</span><span>${m.steps.toLocaleString()} steps · ${m.calBurned.toLocaleString()} cal burned <span class="meal-del" style="font-size:15px" onclick="delMovement('${m.id}')">×</span></span></div>`).join('')||'No entries yet.';
+    const recent=S.movement.filter(m=>isWithinLastNDays(m.date,7)).sort((a,b)=>new Date(b.date)-new Date(a.date));
+    hist.innerHTML=recent
+      .map(m=>`<div class="history-row"><span style="color:var(--muted)">${m.date}</span><span>${m.steps.toLocaleString()} steps · ${m.calBurned.toLocaleString()} cal burned <span class="meal-del" style="font-size:15px" onclick="delMovement('${m.id}')">×</span></span></div>`).join('')||'No entries in the last 7 days.';
   }
 }
 
@@ -1227,6 +1248,14 @@ function evaluateStreakForDate(dateStr){
 let viewingDate=new Date();
 function viewDateStr(){return viewingDate.toDateString();}
 function isViewingToday(){return viewDateStr()===new Date().toDateString();}
+// True calendar rolling window (today back N-1 days) — not "last N entries", so a gap in logging
+// doesn't pull in stale entries from weeks ago to pad out the list.
+function isWithinLastNDays(dateStr,n){
+  const d=new Date(dateStr); if(isNaN(d))return false;
+  d.setHours(0,0,0,0);
+  const cutoff=new Date(); cutoff.setHours(0,0,0,0); cutoff.setDate(cutoff.getDate()-(n-1));
+  return d>=cutoff;
+}
 function navDate(delta){
   viewingDate.setDate(viewingDate.getDate()+delta);
   const today=new Date();
@@ -1550,22 +1579,33 @@ const GOOGLE_CLIENT_ID = '93450585738-k7hsn3fjsu69sigcktdfftfcsjk91qcu.apps.goog
 const DRIVE_FILE_NAME = 'lauren-tracker-data.json';
 let driveAccessToken = null;
 let driveFileId = null;
+let driveRefreshToken = null;
+let driveTokenExpiry = 0; // epoch ms
+// TODO: replace with your deployed drive-token-worker URL (no trailing slash)
+const DRIVE_AUTH_WORKER = 'https://drive-token-worker.joe-shwa-smith.workers.dev';
 
-const DRIVE_TOKEN_KEY='lauren_drive_token', DRIVE_LINKED_KEY='lauren_drive_ever_linked', DRIVE_DISMISS_KEY='lauren_drive_banner_dismissed';
+const DRIVE_TOKEN_KEY='lauren_drive_token', DRIVE_REFRESH_KEY='lauren_drive_refresh_token',
+      DRIVE_EXPIRY_KEY='lauren_drive_token_expiry', DRIVE_LINKED_KEY='lauren_drive_ever_linked',
+      DRIVE_DISMISS_KEY='lauren_drive_banner_dismissed';
 
+// Code flow (popup) instead of the old token flow — this is what makes a refresh_token possible.
+// prompt:'consent' forces Google to re-issue a refresh_token even for people who already granted
+// access under the old token-only flow (Google otherwise skips it on repeat consent).
 function initGoogleAuth(){
   if(typeof google === 'undefined') return;
-  google.accounts.oauth2.initTokenClient({
+  google.accounts.oauth2.initCodeClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file',
+    ux_mode: 'popup',
+    access_type: 'offline',
+    prompt: 'consent',
     callback: async (response) => {
       if(response.error) { console.error('Auth error:', response.error); updateSyncUI('error'); return; }
-      driveAccessToken = response.access_token;
-      localStorage.setItem(DRIVE_TOKEN_KEY, driveAccessToken);
-      localStorage.setItem(DRIVE_LINKED_KEY, '1');
-      hideDriveBanner();
-      updateSyncUI('syncing');
       try{
+        const tokens = await exchangeCodeForTokens(response.code);
+        applyNewTokens(tokens);
+        hideDriveBanner();
+        updateSyncUI('syncing');
         await findOrCreateDriveFile();
         await loadFromDrive();
         updateSyncUI('synced');
@@ -1577,14 +1617,70 @@ function initGoogleAuth(){
         updateSyncUI('error');
       }
     }
-  }).requestAccessToken();
+  }).requestCode();
 }
 
-// Called whenever the Drive API tells us the token is dead (401/403), or a request fails outright.
-// Clears the dead token but keeps the "ever linked" flag so the banner can fire on next load.
+async function exchangeCodeForTokens(code){
+  const resp = await fetch(DRIVE_AUTH_WORKER+'/exchange', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code})
+  });
+  if(!resp.ok) throw new Error('exchange-failed');
+  return resp.json();
+}
+
+function applyNewTokens(tokens){
+  driveAccessToken = tokens.access_token;
+  driveTokenExpiry = Date.now() + (tokens.expires_in*1000) - 60000;
+  localStorage.setItem(DRIVE_TOKEN_KEY, driveAccessToken);
+  localStorage.setItem(DRIVE_EXPIRY_KEY, String(driveTokenExpiry));
+  if(tokens.refresh_token){
+    driveRefreshToken = tokens.refresh_token;
+    localStorage.setItem(DRIVE_REFRESH_KEY, driveRefreshToken);
+  }
+  localStorage.setItem(DRIVE_LINKED_KEY, '1');
+}
+
+// Silently trades the refresh token for a new access token — no popup, no user interaction.
+async function refreshAccessToken(){
+  if(!driveRefreshToken) throw new Error('no-refresh-token');
+  const resp = await fetch(DRIVE_AUTH_WORKER+'/refresh', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({refresh_token: driveRefreshToken})
+  });
+  if(!resp.ok) throw new Error('refresh-token-dead');
+  const data = await resp.json();
+  driveAccessToken = data.access_token;
+  driveTokenExpiry = Date.now() + (data.expires_in*1000) - 60000;
+  localStorage.setItem(DRIVE_TOKEN_KEY, driveAccessToken);
+  localStorage.setItem(DRIVE_EXPIRY_KEY, String(driveTokenExpiry));
+  return driveAccessToken;
+}
+
+async function ensureDriveToken(){
+  if(driveAccessToken && Date.now() < driveTokenExpiry) return driveAccessToken;
+  return refreshAccessToken();
+}
+
+// Wraps every Drive API call: ensures a live token, and on a 401/403 mid-flight tries one silent
+// refresh-and-retry before giving up.
+async function driveApiFetch(url, options={}, attempt=0){
+  await ensureDriveToken();
+  const headers = Object.assign({}, options.headers, {'Authorization':'Bearer '+driveAccessToken});
+  const resp = await fetch(url, Object.assign({}, options, {headers}));
+  if((resp.status===401 || resp.status===403) && attempt < 2){
+    await refreshAccessToken();
+    return driveApiFetch(url, options, attempt+1);
+  }
+  return resp;
+}
+
+// Called only when refresh itself fails (refresh token is genuinely dead) — clears everything and
+// shows the banner.
 function handleDriveAuthFailure(){
   driveAccessToken = null;
+  driveRefreshToken = null;
   localStorage.removeItem(DRIVE_TOKEN_KEY);
+  localStorage.removeItem(DRIVE_REFRESH_KEY);
+  localStorage.removeItem(DRIVE_EXPIRY_KEY);
   updateSyncUI('disconnected');
   checkDriveBannerOnLoad();
 }
@@ -1592,7 +1688,7 @@ function handleDriveAuthFailure(){
 // ─── DISCONNECT BANNER ─────────────────────────────────────────────────────
 function checkDriveBannerOnLoad(){
   if(sessionStorage.getItem(DRIVE_DISMISS_KEY)==='1') return;
-  if(localStorage.getItem(DRIVE_LINKED_KEY)==='1' && !driveAccessToken){
+  if(localStorage.getItem(DRIVE_LINKED_KEY)==='1' && !driveAccessToken && !driveRefreshToken){
     showDriveBanner();
   }
 }
@@ -1614,27 +1710,30 @@ function dismissDriveBanner(){ hideDriveBanner(); sessionStorage.setItem(DRIVE_D
 function reconnectDriveFromBanner(){ hideDriveBanner(); initGoogleAuth(); }
 
 function handleSyncClick(){
-  if(driveAccessToken){ fullSync(); }
+  if(driveAccessToken || driveRefreshToken){ fullSync(); }
   else { initGoogleAuth(); }
 }
 
 // Pull remote changes down, merge, then push the merged result back up — keeps every device reconciled
 async function fullSync(){
-  if(!driveAccessToken || !driveFileId){ initGoogleAuth(); return; }
+  if(!driveRefreshToken && !driveAccessToken){ initGoogleAuth(); return; }
   updateSyncUI('syncing');
-  await loadFromDrive();
-  await syncToDrive();
+  try{
+    if(!driveFileId) await findOrCreateDriveFile();
+    await loadFromDrive();
+    await syncToDrive();
+  }catch(e){
+    console.error('Full sync failed:', e);
+    if(e.message==='refresh-token-dead'||e.message==='no-refresh-token') handleDriveAuthFailure();
+    else updateSyncUI('error');
+  }
 }
 
 async function findOrCreateDriveFile(){
   // Search for existing file in appDataFolder
-  const searchResp = await fetch(
-    'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22'+DRIVE_FILE_NAME+'%22&fields=files(id,name,modifiedTime)',
-    {headers:{'Authorization':'Bearer '+driveAccessToken}}
+  const searchResp = await driveApiFetch(
+    'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22'+DRIVE_FILE_NAME+'%22&fields=files(id,name,modifiedTime)'
   );
-  // A dead/expired token must fail loudly here — otherwise this silently falls through to the
-  // "create new file" branch below and spawns a blank Drive file, orphaning the real history.
-  if(searchResp.status===401 || searchResp.status===403) throw new Error('drive-auth-failed');
   const searchData = await searchResp.json();
   if(searchData.files && searchData.files.length > 0){
     driveFileId = searchData.files.length>1
@@ -1642,25 +1741,20 @@ async function findOrCreateDriveFile(){
       : searchData.files[0].id;
   } else {
     // Create new file
-    const createResp = await fetch('https://www.googleapis.com/drive/v3/files',{
+    const createResp = await driveApiFetch('https://www.googleapis.com/drive/v3/files',{
       method:'POST',
-      headers:{'Authorization':'Bearer '+driveAccessToken,'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name:DRIVE_FILE_NAME,parents:['appDataFolder']})
     });
-    if(createResp.status===401 || createResp.status===403) throw new Error('drive-auth-failed');
     const createData = await createResp.json();
     driveFileId = createData.id;
   }
 }
 
 async function loadFromDrive(){
-  if(!driveAccessToken || !driveFileId) return;
+  if(!driveFileId) return;
   try{
-    const resp = await fetch(
-      'https://www.googleapis.com/drive/v3/files/'+driveFileId+'?alt=media',
-      {headers:{'Authorization':'Bearer '+driveAccessToken}}
-    );
-    if(resp.status===401 || resp.status===403){ handleDriveAuthFailure(); return; }
+    const resp = await driveApiFetch('https://www.googleapis.com/drive/v3/files/'+driveFileId+'?alt=media');
     if(resp.ok){
       const text = await resp.text();
       if(text && text.length > 2){
@@ -1698,11 +1792,14 @@ async function loadFromDrive(){
         applyTabSettings();
       }
     }
-  }catch(e){ console.error('Load from Drive error:', e); }
+  }catch(e){
+    console.error('Load from Drive error:', e);
+    if(e.message==='refresh-token-dead'||e.message==='no-refresh-token') handleDriveAuthFailure();
+  }
 }
 
 async function syncToDrive(){
-  if(!driveAccessToken || !driveFileId){ initGoogleAuth(); return; }
+  if(!driveFileId){ if(driveRefreshToken||driveAccessToken){ await findOrCreateDriveFile(); } else { initGoogleAuth(); return; } }
   updateSyncUI('syncing');
   try{
     const data = JSON.stringify({
@@ -1723,16 +1820,16 @@ async function syncToDrive(){
       tombstones: S.tombstones,
       lastSync: new Date().toISOString()
     });
-    const resp = await fetch(
+    const resp = await driveApiFetch(
       'https://www.googleapis.com/upload/drive/v3/files/'+driveFileId+'?uploadType=media',
-      {method:'PATCH', headers:{'Authorization':'Bearer '+driveAccessToken,'Content-Type':'application/json'}, body:data}
+      {method:'PATCH', headers:{'Content-Type':'application/json'}, body:data}
     );
-    if(resp.status===401 || resp.status===403){ handleDriveAuthFailure(); return; }
     if(!resp.ok){ updateSyncUI('error'); return; }
     updateSyncUI('synced');
   }catch(e){
     console.error('Drive sync error:', e);
-    updateSyncUI('error');
+    if(e.message==='refresh-token-dead'||e.message==='no-refresh-token') handleDriveAuthFailure();
+    else updateSyncUI('error');
   }
 }
 
@@ -1747,16 +1844,26 @@ function updateSyncUI(state){
 
 // Drive sync triggered directly from saveLocal
 
-// Try to restore token on load
+// On load: restore whatever we have and let ensureDriveToken() silently refresh as needed —
+// this reconnects invisibly even after weeks away, no popup required.
 window.addEventListener('load', ()=>{
+  driveRefreshToken = localStorage.getItem(DRIVE_REFRESH_KEY);
   const savedToken = localStorage.getItem(DRIVE_TOKEN_KEY);
-  if(savedToken){
-    driveAccessToken = savedToken;
+  const savedExpiry = +localStorage.getItem(DRIVE_EXPIRY_KEY) || 0;
+  if(savedToken && savedExpiry){
+    driveAccessToken = savedToken; driveTokenExpiry = savedExpiry;
+  } else if(savedToken){
+    // A token with no recorded expiry is a leftover from the old (pre-refresh-token) auth flow —
+    // it can't be silently refreshed, so don't trust it. Clear it and require one real reconnect.
+    localStorage.removeItem(DRIVE_TOKEN_KEY);
+  }
+  if(driveRefreshToken || driveAccessToken){
     findOrCreateDriveFile().then(()=>{
       loadFromDrive();
       updateSyncUI('synced');
-    }).catch(()=>{
-      handleDriveAuthFailure();
+    }).catch((e)=>{
+      if(e.message==='refresh-token-dead'||e.message==='no-refresh-token') handleDriveAuthFailure();
+      else { updateSyncUI('error'); checkDriveBannerOnLoad(); }
     });
   } else {
     checkDriveBannerOnLoad();
@@ -1766,7 +1873,7 @@ window.addEventListener('load', ()=>{
 // Pull fresh data whenever the app regains focus (phone unlocked, tab switched back to) —
 // covers the common case where the app was never fully reloaded on that device
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && driveAccessToken && driveFileId) {
+  if (document.visibilityState === 'visible' && (driveAccessToken || driveRefreshToken) && driveFileId) {
     loadFromDrive();
   }
 });
