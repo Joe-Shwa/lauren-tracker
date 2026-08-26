@@ -196,6 +196,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .collapsible-chevron { font-size: 11px; color: var(--muted); transition: transform 0.2s; }
 .ms-side-row { display: flex; gap: 8px; margin-bottom: 4px; }
 .ms-side-row .input-label { font-size: 9px; }
+
+/* SETTINGS SECTIONS */
+.settings-section-title { font-size: 12px; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px; margin: 18px 0 8px; }
+.settings-section-title:first-of-type { margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -248,6 +252,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         <div style="flex:1"><div class="input-label">Height (cm)</div><input class="input-field" id="s-height" type="number" placeholder="158"></div>
         <div style="flex:1"><div class="input-label">Age</div><input class="input-field" id="s-age" type="number" placeholder="40"></div>
       </div>
+      <div class="form-group">
+        <div class="input-label">Training level</div>
+        <select class="input-field" id="s-training">
+          <option value="general">General health / not training specifically</option>
+          <option value="recreational" selected>Recreational gym-goer / staying fit</option>
+          <option value="athlete">Competitive athlete / bodybuilder</option>
+        </select>
+      </div>
       <div id="weight-goal-advice" style="display:none;border-radius:10px;padding:12px;font-size:13px;line-height:1.6;margin-bottom:12px"></div>
       <div class="suggestion-box" id="s-suggestion"></div>
       <button class="btn btn-secondary btn-sm" style="margin-bottom:10px;width:auto" onclick="calcTargets()">Calculate my targets →</button>
@@ -291,6 +303,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <h2>⚙️ Settings</h2>
     <p style="margin-bottom:14px">Today, Log, and Move are always on. Turn the others on or off to keep things simple — nothing gets deleted, just hidden.</p>
     <div id="settings-tab-list"></div>
+
+    <div class="settings-section-title">Training Level</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Adjusts your protein target. Calories, fat and carbs are unaffected unless you set a custom target below.</p>
+    <select class="input-field" id="pf-training">
+      <option value="general">General health / not training specifically</option>
+      <option value="recreational">Recreational gym-goer / staying fit</option>
+      <option value="athlete">Competitive athlete / bodybuilder</option>
+    </select>
+
+    <div class="settings-section-title">Dietitian / Custom Targets</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">If a dietitian has given you specific targets, enter them here — they'll override the calculated numbers. Leave a field blank to keep using the automatic value.</p>
+    <div class="macro-fields">
+      <div class="macro-field-wrap"><div class="input-label">Cal</div><input class="input-field" id="pf-ov-cals" type="number" placeholder="auto"></div>
+      <div class="macro-field-wrap"><div class="input-label">Protein g</div><input class="input-field" id="pf-ov-protein" type="number" placeholder="auto"></div>
+      <div class="macro-field-wrap"><div class="input-label">Fat g</div><input class="input-field" id="pf-ov-fat" type="number" placeholder="auto"></div>
+      <div class="macro-field-wrap"><div class="input-label">Carbs g</div><input class="input-field" id="pf-ov-carb" type="number" placeholder="auto"></div>
+    </div>
+
     <button class="btn btn-primary" style="margin-top:16px" onclick="closeSettings()">Done</button>
   </div>
 </div>
@@ -643,6 +673,41 @@ let chatHistory = [];
 let lookupPending = null;
 let expandedPeptides = new Set();
 
+// ─── TRAINING LEVELS & MACRO CALC ──────────────────────────────────────────────
+// recreational = 1.0x, matches the original formula exactly so existing users see no
+// change unless they deliberately pick a different level.
+const TRAINING_LEVELS = {
+  general: {label:'General health / not training specifically', mult:0.85},
+  recreational: {label:'Recreational gym-goer / staying fit', mult:1.0},
+  athlete: {label:'Competitive athlete / bodybuilder', mult:1.25}
+};
+// Pure calculation from a profile-like object {goal, trainingLevel}. No side effects.
+function computeMacros(p){
+  const goal=p.goal;
+  const mult=(TRAINING_LEVELS[p.trainingLevel]||TRAINING_LEVELS.recreational).mult;
+  const cals=Math.round(goal*26);
+  const protein=Math.round(goal*2*mult);
+  const fat=Math.round(cals/30);
+  const carbs=Math.max(50,Math.round((cals-protein*4-fat*9)/4));
+  const water=Math.round((goal/30)*1000);
+  return {cals,protein,fat,carbs,water};
+}
+// Overlays any non-null/non-empty dietitian override fields on top of the computed macros.
+// overrides: {cals,protein,fat,carb} (note: carb here, matching S.profile.overrides key names below)
+function computeFinalMacros(p, overrides){
+  const base=computeMacros(p);
+  const ov=overrides||{};
+  const hasOverrides=['cals','protein','fat','carb'].some(k=>ov[k]!=null&&ov[k]!=='');
+  const final={
+    cals: (ov.cals!=null&&ov.cals!=='')?Math.round(+ov.cals):base.cals,
+    protein: (ov.protein!=null&&ov.protein!=='')?Math.round(+ov.protein):base.protein,
+    fat: (ov.fat!=null&&ov.fat!=='')?Math.round(+ov.fat):base.fat,
+    carbs: (ov.carb!=null&&ov.carb!=='')?Math.round(+ov.carb):base.carbs,
+    water: base.water
+  };
+  return {...final, hasOverrides};
+}
+
 // ─── ID / SYNC HELPERS ────────────────────────────────────────────────────────
 function newId(prefix){return prefix+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);}
 function markDeleted(type,id){if(!S.tombstones)S.tombstones=[];S.tombstones.push({type,id,deletedAt:Date.now()});}
@@ -673,6 +738,13 @@ function migrateState(){
   if(!S.settings.tabs)S.settings.tabs={weight:true,sleep:true,supps:true,peptides:false,ask:true};
   ['weight','sleep','supps','ask'].forEach(k=>{if(typeof S.settings.tabs[k]!=='boolean')S.settings.tabs[k]=true;});
   if(typeof S.settings.tabs.peptides!=='boolean')S.settings.tabs.peptides=false; // stays off until Lauren decides to use it
+  // Training level + dietitian overrides — backfill onto existing profiles so old saved data
+  // (Lauren's real numbers) keeps working unchanged: recreational is a 1.0x multiplier, and
+  // empty overrides fall straight back through to the existing computed macros.
+  if(S.profile){
+    if(!S.profile.trainingLevel)S.profile.trainingLevel='recreational';
+    if(!S.profile.overrides)S.profile.overrides={cals:null,protein:null,fat:null,carb:null};
+  }
   // Migrate meals/water from the old "today only" storage into permanent dated logs
   if(!S.meals)S.meals=[];
   if(!S.water)S.water=[];
@@ -813,8 +885,43 @@ const OPTIONAL_TABS=[
   {key:'peptides',label:'🧬 Peptides'},
   {key:'ask',label:'💬 Ask'}
 ];
-function openSettings(){renderSettingsPanel();document.getElementById('settings-overlay').classList.remove('hidden');}
-function closeSettings(){document.getElementById('settings-overlay').classList.add('hidden');}
+function openSettings(){
+  renderSettingsPanel();
+  // Populate training level + override fields from the current profile
+  if(S.profile){
+    const trainEl=document.getElementById('pf-training');
+    if(trainEl)trainEl.value=S.profile.trainingLevel||'recreational';
+    const ov=S.profile.overrides||{};
+    const setOv=(id,val)=>{const el=document.getElementById(id);if(el)el.value=(val!=null)?val:'';};
+    setOv('pf-ov-cals',ov.cals);
+    setOv('pf-ov-protein',ov.protein);
+    setOv('pf-ov-fat',ov.fat);
+    setOv('pf-ov-carb',ov.carb);
+  }
+  document.getElementById('settings-overlay').classList.remove('hidden');
+}
+function closeSettings(){
+  if(S.profile){
+    const trainEl=document.getElementById('pf-training');
+    S.profile.trainingLevel=trainEl?trainEl.value:(S.profile.trainingLevel||'recreational');
+    const readOv=(id)=>{const el=document.getElementById(id);const v=el?el.value:'';return (v===''?null:+v);};
+    S.profile.overrides={
+      cals:readOv('pf-ov-cals'),
+      protein:readOv('pf-ov-protein'),
+      fat:readOv('pf-ov-fat'),
+      carb:readOv('pf-ov-carb')
+    };
+    const final=computeFinalMacros(S.profile,S.profile.overrides);
+    S.profile.cals=final.cals;
+    S.profile.protein=final.protein;
+    S.profile.fat=final.fat;
+    S.profile.carbs=final.carbs;
+    S.profile.water=final.water;
+    saveLocal();
+    updateAll();
+  }
+  document.getElementById('settings-overlay').classList.add('hidden');
+}
 function renderSettingsPanel(){
   const el=document.getElementById('settings-tab-list');
   el.innerHTML=OPTIONAL_TABS.map(t=>`
@@ -872,11 +979,12 @@ function calcTargets(){
   const goal=parseFloat(document.getElementById('s-goal').value);
   if(!cur||!goal){alert('Please enter current and goal weight');return;}
   checkWeightGoal();
-  const cals=Math.round(goal*26),protein=Math.round(goal*2),fat=Math.round(cals/30),carbs=Math.round((cals-protein*4-fat*9)/4),water=Math.round((goal/30)*1000);
+  const trainingLevel=document.getElementById('s-training').value||'recreational';
+  const {cals,protein,fat,carbs,water}=computeMacros({goal,trainingLevel});
   const weeks=Math.round((cur-goal)/0.4);
   const box=document.getElementById('s-suggestion');box.style.display='block';
   box.innerHTML=`<strong>Your targets (at ${goal}kg goal weight):</strong><br>🔥 ${cals} cal/day &nbsp; 💪 ${protein}g protein/day<br>🥑 ${fat}g fat &nbsp; 🍝 ${carbs}g carbs &nbsp; 💧 ${(water/1000).toFixed(1)}L water<br><br><strong>Timeline:</strong> At 0.4kg/week (sustainable), roughly <strong>${weeks} weeks</strong> to reach ${goal}kg.`;
-  S._pending={cals,protein,fat,carbs,water};
+  S._pending={cals,protein,fat,carbs,water,trainingLevel};
 }
 function finishSetup(){
   const cur=parseFloat(document.getElementById('s-cur').value);
@@ -886,7 +994,7 @@ function finishSetup(){
   if(!cur||!goal){alert('Please fill in your weights and calculate targets first');return;}
   if(!S._pending)calcTargets();
   if(!S._pending)return;
-  S.profile={name:'Lauren',current:cur,goal,height:height||158,age:age||40,...S._pending};
+  S.profile={name:'Lauren',current:cur,goal,height:height||158,age:age||40,...S._pending,overrides:{cals:null,protein:null,fat:null,carb:null}};
   if(!S.weights.find(w=>w.weight===cur))S.weights.push({id:newId('w'),updatedAt:Date.now(),date:new Date().toDateString(),weight:cur});
   saveLocal();showApp();renderViewDate();
 }
@@ -2089,6 +2197,7 @@ async function loadFromDrive(){
         }
         if(driveData.profile) S.profile = driveData.profile;
         if(driveData.settings && driveData.settings.tabs) S.settings.tabs = {...driveData.settings.tabs, ...S.settings.tabs}; // local choice wins on conflict
+        migrateState();
         saveLocal();
         updateAll();
         updateOtherLogs();
