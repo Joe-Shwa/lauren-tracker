@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lauren's Wellness Tracker</title>
 <link rel="icon" type="image/png" sizes="192x192" href="lauren-tracker-icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="lauren-tracker-icon-512.png">
@@ -312,6 +312,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <option value="athlete">Competitive athlete / bodybuilder</option>
     </select>
 
+    <div class="settings-section-title">Streak Weighting</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">On days you only hit one of the two — what should count as an amber day? Only changes new days going forward, not your streak history.</p>
+    <select class="input-field" id="pf-streak-mode">
+      <option value="balanced">Balanced — either counts</option>
+      <option value="protein">Protein priority</option>
+      <option value="calorie">Calorie priority</option>
+    </select>
+
     <div class="settings-section-title">Dietitian / Custom Targets</div>
     <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">If a dietitian has given you specific targets, enter them here — they'll override the calculated numbers. Leave a field blank to keep using the automatic value.</p>
     <div class="macro-fields">
@@ -342,6 +350,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   </div>
   <div class="card">
     <div class="card-title">Status <span id="streak-count" style="float:right;font-weight:700;color:var(--amber)">🔥 0 days</span></div>
+    <div class="streak-dots" id="streak-dots" style="display:flex;gap:6px;justify-content:center;margin:10px 0 2px"></div>
     <div class="sm" id="traffic-light" style="text-align:left;padding:12px">Log a meal to see today's status.</div>
   </div>
   <div class="card">
@@ -725,6 +734,29 @@ function mergeById(localArr,driveArr,type){
   return Object.values(map);
 }
 // Backfill id/updatedAt onto any entries created before this update, so old data keeps working.
+// Collapse duplicate Quick Add items with the same name — old bug: the seed's ids were re-minted
+// randomly every time S.quickFoods got (re-)seeded (e.g. a cleared local session before Drive sync
+// caught up), so a Drive merge (id-keyed, blind to name) kept stacking "new" copies of the same 8
+// staples. Seed items now carry fixed ids so this shouldn't recur, but this cleans up whatever
+// duplicates already exist. Keeps one entry per name — prefers a custom (user-edited) copy over a
+// plain seed copy if both exist. Must run on ANY change to S.quickFoods, not just at startup — the
+// corruption re-appears after a Drive merge if this only runs once.
+function dedupeQuickFoodsByName(){
+  const byName=new Map();
+  (S.quickFoods||[]).forEach(f=>{
+    const key=(f.n||'').trim().toLowerCase();
+    if(!key)return;
+    const cur=byName.get(key);
+    if(!cur || (f.custom && !cur.custom) || (f.custom===cur.custom && (f.updatedAt||0)>(cur.updatedAt||0))){
+      byName.set(key,f);
+    }
+  });
+  if(byName.size < (S.quickFoods||[]).length){
+    S.quickFoods=[...byName.values()];
+    return true;
+  }
+  return false;
+}
 function migrateArr(arr,prefix,dateField){
   (arr||[]).forEach(e=>{
     if(!e.id)e.id=newId(prefix);
@@ -738,6 +770,7 @@ function migrateState(){
   if(!S.settings.tabs)S.settings.tabs={weight:true,sleep:true,supps:true,peptides:false,ask:true};
   ['weight','sleep','supps','ask'].forEach(k=>{if(typeof S.settings.tabs[k]!=='boolean')S.settings.tabs[k]=true;});
   if(typeof S.settings.tabs.peptides!=='boolean')S.settings.tabs.peptides=false; // stays off until Lauren decides to use it
+  if(!S.settings.streakMode)S.settings.streakMode='balanced'; // 'balanced' | 'protein' | 'calorie' — what counts as an amber day
   // Training level + dietitian overrides — backfill onto existing profiles so old saved data
   // (Lauren's real numbers) keeps working unchanged: recreational is a 1.0x multiplier, and
   // empty overrides fall straight back through to the existing computed macros.
@@ -806,9 +839,10 @@ function migrateState(){
   // on first run — after this, it's the user's own list (id-based, so custom items can be removed
   // without shifting indices under the seeded ones).
   if(!S.quickFoods){
-    S.quickFoods=QUICK_FOODS_SEED.map(f=>({...f,id:newId('qf'),custom:false,updatedAt:Date.now()}));
+    S.quickFoods=QUICK_FOODS_SEED.map(f=>({...f,custom:false,updatedAt:Date.now()}));
   }
   S.quickFoods.forEach(f=>{if(!f.id)f.id=newId('qf');if(!f.updatedAt)f.updatedAt=Date.now();});
+  dedupeQuickFoodsByName(); // clean up duplicates from the old bug where seed ids were re-minted randomly on every reseed
 
   // Body measurements — dated log, one entry per day, same pattern as weight/sleep/movement
   if(!S.measurements)S.measurements=[];
@@ -817,14 +851,14 @@ function migrateState(){
 
 // Note: no fiber field here — Lauren's tracker doesn't track fiber (matches her existing schema).
 const QUICK_FOODS_SEED = [
-  {n:"Greek Yoghurt",i:"🥛",c:150,p:17,f:5,cb:8,a:"170g"},
-  {n:"2 Eggs",i:"🥚",c:140,p:12,f:10,cb:1,a:"2 eggs"},
-  {n:"Tuna Tin",i:"🐟",c:120,p:28,f:1,cb:0,a:"95g tin"},
-  {n:"Chicken Breast",i:"🍗",c:165,p:31,f:3,cb:0,a:"100g"},
-  {n:"Salmon Fillet",i:"🐠",c:208,p:28,f:10,cb:0,a:"120g"},
-  {n:"Cottage Cheese",i:"🧀",c:100,p:14,f:2,cb:5,a:"150g"},
-  {n:"Protein Shake",i:"🥤",c:130,p:25,f:2,cb:5,a:"1 scoop"},
-  {n:"Beef Mince",i:"🥩",c:250,p:26,f:15,cb:0,a:"100g"},
+  {id:"qf_seed_yoghurt",n:"Greek Yoghurt",i:"🥛",c:150,p:17,f:5,cb:8,a:"170g"},
+  {id:"qf_seed_eggs",n:"2 Eggs",i:"🥚",c:140,p:12,f:10,cb:1,a:"2 eggs"},
+  {id:"qf_seed_tuna",n:"Tuna Tin",i:"🐟",c:120,p:28,f:1,cb:0,a:"95g tin"},
+  {id:"qf_seed_chicken",n:"Chicken Breast",i:"🍗",c:165,p:31,f:3,cb:0,a:"100g"},
+  {id:"qf_seed_salmon",n:"Salmon Fillet",i:"🐠",c:208,p:28,f:10,cb:0,a:"120g"},
+  {id:"qf_seed_cottage",n:"Cottage Cheese",i:"🧀",c:100,p:14,f:2,cb:5,a:"150g"},
+  {id:"qf_seed_shake",n:"Protein Shake",i:"🥤",c:130,p:25,f:2,cb:5,a:"1 scoop"},
+  {id:"qf_seed_mince",n:"Beef Mince",i:"🥩",c:250,p:26,f:15,cb:0,a:"100g"},
 ];
 
 // ─── MEASUREMENTS: field config (drives the form, tips, history summary) ──────
@@ -898,6 +932,8 @@ function openSettings(){
     setOv('pf-ov-fat',ov.fat);
     setOv('pf-ov-carb',ov.carb);
   }
+  const smEl=document.getElementById('pf-streak-mode');
+  if(smEl)smEl.value=(S.settings&&S.settings.streakMode)||'balanced';
   document.getElementById('settings-overlay').classList.remove('hidden');
 }
 function closeSettings(){
@@ -920,6 +956,8 @@ function closeSettings(){
     saveLocal();
     updateAll();
   }
+  const smEl=document.getElementById('pf-streak-mode');
+  if(smEl){ if(!S.settings)S.settings={}; S.settings.streakMode=smEl.value||'balanced'; }
   document.getElementById('settings-overlay').classList.add('hidden');
 }
 function renderSettingsPanel(){
@@ -1579,8 +1617,13 @@ function computeDayStatus(dateStr){
   const hasCalData=!!mv;
   const deficit=hasCalData?(mv.calBurned||0)-totals.cal:null;
   const deficitHit=hasCalData?deficit>0:null;
+  const streakMode=(S.settings&&S.settings.streakMode)||'balanced';
   let color;
-  if(hasCalData){ color=(deficitHit&&proHit)?'green':(deficitHit||proHit)?'amber':'red'; }
+  if(hasCalData){
+    if(streakMode==='protein') color=(proHit&&deficitHit)?'green':proHit?'amber':'red';
+    else if(streakMode==='calorie') color=(proHit&&deficitHit)?'green':deficitHit?'amber':'red';
+    else color=(deficitHit&&proHit)?'green':(deficitHit||proHit)?'amber':'red'; // balanced: either counts
+  }
   else { color=proHit?'amber':'red'; } // can't assess calorie deficit without Movement data logged
   return {color,totals,proTarget,proHit,hasCalData,deficit,deficitHit};
 }
@@ -1598,7 +1641,17 @@ function updateTrafficLight(){
   } else if(st.color==='green'){
     msg=`${dot} <strong>On track</strong> — ${Math.round(st.deficit)} cal deficit · ${Math.round(st.totals.pro)}/${st.proTarget}g protein`;
   } else if(st.color==='amber'){
-    msg=`${dot} <strong>Halfway there</strong> — ${st.deficitHit?Math.round(st.deficit)+' cal deficit':Math.round(-st.deficit)+' cal surplus'} · ${Math.round(st.totals.pro)}/${st.proTarget}g protein${st.proHit?' ✓':' ('+proShort+'g to go)'}`;
+    if(!st.proHit){
+      // Protein is the outstanding target — scale the headline to how close you actually are,
+      // instead of always saying "Halfway there" whether you're 5g or 90g short.
+      const proFracRemaining=proShort/st.proTarget;
+      const headline=proFracRemaining<=0.15?'Nearly there':proFracRemaining<=0.5?'Halfway there':'Off to a start';
+      const calPart=st.hasCalData?(st.deficitHit?` · ${Math.round(st.deficit)} cal deficit ✓`:` · ${Math.round(-st.deficit)} cal surplus`):'';
+      msg=`${dot} <strong>${headline}</strong> — ${proShort}g protein to go${calPart}`;
+    } else {
+      // Protein's already hit; calories are the thing still open.
+      msg=`${dot} <strong>Protein sorted ✓</strong> — ${Math.round(-st.deficit)} cal surplus to trim`;
+    }
   } else {
     msg=`${dot} <strong>Off track ${dayWord}</strong> — ${Math.round(-st.deficit)} cal surplus · ${proShort}g protein short`;
   }
@@ -1606,6 +1659,40 @@ function updateTrafficLight(){
   el.innerHTML=msg;
   const streakEl=document.getElementById('streak-count');
   if(streakEl)streakEl.textContent='🔥 '+(S.streak.count||0)+' day'+(S.streak.count===1?'':'s');
+  renderStreakDots();
+}
+// Row of the last 7 days, colour-coded from S.streak.log (green/amber/red, with a blue ring for a
+// graced red day). Today has no log entry yet (it's only evaluated once the day ends), so it's shown
+// live from computeDayStatus with a dashed border to signal "in progress, not final".
+function renderStreakDots(){
+  const el=document.getElementById('streak-dots');
+  if(!el||!S.streak)return;
+  const colorVar={green:'var(--green)',amber:'var(--amber)',red:'var(--red)'};
+  const todayStr=new Date().toDateString();
+  const dots=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const dStr=d.toDateString();
+    const isToday=dStr===todayStr;
+    const entry=(S.streak.log||[]).find(l=>l.date===dStr);
+    let bg,border,title;
+    if(entry){
+      bg=colorVar[entry.color]||'var(--border)';
+      border=entry.graced?'2px solid var(--blue)':'1.5px solid rgba(0,0,0,0.08)';
+      title=dStr+': '+entry.color+(entry.graced?' (graced)':'');
+    } else if(isToday){
+      const live=computeDayStatus(todayStr);
+      bg=colorVar[live.color]||'var(--border)';
+      border='2px dashed var(--muted)';
+      title='Today so far: '+live.color;
+    } else {
+      bg='var(--border)';
+      border='1.5px solid rgba(0,0,0,0.08)';
+      title=dStr+': no data';
+    }
+    dots.push(`<div title="${title}" style="width:14px;height:14px;border-radius:50%;background:${bg};border:${border};flex-shrink:0"></div>`);
+  }
+  el.innerHTML=dots.join('');
 }
 function recomputeStreak(){
   const log=(S.streak&&S.streak.log)||[];
@@ -2185,6 +2272,7 @@ async function loadFromDrive(){
         S.water = mergeById(S.water, driveData.water, 'water').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
         S.movement = mergeById(S.movement, driveData.movement, 'movement');
         S.quickFoods = mergeById(S.quickFoods, driveData.quickFoods, 'quickfood');
+        dedupeQuickFoodsByName(); // clean up any same-name duplicates the Drive merge just re-introduced
         S.measurements = mergeById(S.measurements, driveData.measurements, 'measurement').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
         if(driveData.streak && driveData.streak.log){
           if(!S.streak)S.streak={count:0,longest:0,log:[]};
