@@ -1191,7 +1191,7 @@ async function handleManualPhoto(event){
       const b64=e.target.result.split(',')[1];
       const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
         body:JSON.stringify({
           model:'claude-sonnet-4-6',max_tokens:400,
           messages:[{role:'user',content:[
@@ -1245,7 +1245,7 @@ async function doLookup(){
   try{
     const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
       body:JSON.stringify({
         model:'claude-sonnet-4-6',max_tokens:300,
         messages:[{role:'user',content:`Estimate macros for: "${q}". This is for an adult female. Cooked weight assumed unless stated otherwise. Return ONLY valid JSON, no other text: {"name":"descriptive food name with quantity","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one relevant emoji","soy_risk":boolean,"note":"one brief sentence — confidence level or key assumption e.g. cooked weight assumed"}. Set soy_risk true only if the food clearly contains non-fermented soy (tofu, soy milk, edamame, soy protein isolate, TVP). Fermented soy (soy sauce, miso, tempeh) is not a risk.`}]
@@ -1297,7 +1297,7 @@ async function handleMealPhoto(event){
       const b64=e.target.result.split(',')[1];
       const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
         body:JSON.stringify({
           model:'claude-sonnet-4-6',max_tokens:400,
           messages:[{role:'user',content:[
@@ -1887,7 +1887,7 @@ function retryPeptideLookup(id){
 }
 async function fetchPeptideInfo(name,dose){
   try{
-    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:350,messages:[{role:'user',content:`Give a brief practical profile for the peptide/compound "${name}" (dose/timing as described: "${dose}"). Also flag if it commonly involves soy-derived carriers or fillers, since the user has an anaphylactic soy allergy. Return ONLY valid JSON, no other text:
+    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:350,messages:[{role:'user',content:`Give a brief practical profile for the peptide/compound "${name}" (dose/timing as described: "${dose}"). Also flag if it commonly involves soy-derived carriers or fillers, since the user has an anaphylactic soy allergy. Return ONLY valid JSON, no other text:
 {"purpose":"one sentence — what it's used for","cautions":["short caution 1","short caution 2"],"evidence":"one short clause, or empty string"}
 
 Rules:
@@ -1981,7 +1981,7 @@ async function sendChat(imgB64,imgType){
   chatHistory.push({role:'user',content:content.length===1&&content[0].type==='text'?text:content});
   try{
     const msgs=[{role:'user',content:'System: '+buildSys()},{role:'assistant',content:'Ready to help.'},...chatHistory];
-    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:800,messages:msgs})});
+    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:800,messages:msgs})});
     const data=await resp.json();
     const reply=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
     loading.remove();appendMsg('ai',reply);chatHistory.push({role:'assistant',content:reply});
@@ -2041,7 +2041,7 @@ function toggleSupp(id){S.supps[id]=!S.supps[id];saveLocal();renderSupps();}
 
 async function fetchSupplementNote(name,dose){
   try{
-    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:200,messages:[{role:'user',content:`In one short sentence (under 25 words), explain what the supplement "${name}" (taken: "${dose}") is generally used for and why that timing makes sense. Return ONLY the sentence — no preamble, no quotes.`}]})});
+    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:200,messages:[{role:'user',content:`In one short sentence (under 25 words), explain what the supplement "${name}" (taken: "${dose}") is generally used for and why that timing makes sense. Return ONLY the sentence — no preamble, no quotes.`}]})});
     const data=await resp.json();
     return data.content.filter(c=>c.type==='text').map(c=>c.text).join('').trim();
   }catch(e){return '';}
