@@ -9,6 +9,8 @@
 <link rel="apple-touch-icon" href="lauren-tracker-icon-192.png">
 <meta name="theme-color" content="#1C3A3A">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -200,10 +202,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 /* SETTINGS SECTIONS */
 .settings-section-title { font-size: 12px; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px; margin: 18px 0 8px; }
 .settings-section-title:first-of-type { margin-top: 4px; }
-</style>
-</head>
-<body>
 
+/* FASTING */
+.fast-ring-wrap { position: relative; width: 160px; height: 160px; margin: 10px auto; }
+.fast-ring-wrap svg { transform: rotate(-90deg); }
+.fast-ring-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; }
+.fast-ring-val { font-size: 22px; font-weight: 800; color: var(--dark); }
+.fast-ring-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.fast-preset-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 10px; }
+.fast-preset-btn { background: var(--blue-pale); border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 4px; text-align: center; cursor: pointer; font-size: 12px; font-weight: 700; color: var(--blue); }
+.fast-preset-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+.fast-status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.fast-status-badge.open { background: var(--green-pale); color: var(--green); }
+.fast-status-badge.closed { background: var(--amber-pale); color: var(--amber); }
+</style>
 <!-- ALLERGY BANNER (shown after setup) -->
 <div class="hidden" id="allergy-banner" style="background:#7F1D1D;color:white;padding:10px 16px;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600">
   <div style="font-size:18px;flex-shrink:0">⚠️</div>
@@ -290,6 +302,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="nav-tab active" onclick="showTab('today',this)"><span class="ti">📊</span>Today</div>
   <div class="nav-tab" onclick="showTab('log',this)"><span class="ti">🍽️</span>Log</div>
   <div class="nav-tab" onclick="showTab('movement',this)"><span class="ti">🏃</span>Move</div>
+  <div class="nav-tab" id="nav-fasting" onclick="showTab('fasting',this)"><span class="ti">⏳</span>Fasting</div>
   <div class="nav-tab" id="nav-weight" onclick="showTab('weight',this)"><span class="ti">📏</span>Measure</div>
   <div class="nav-tab" id="nav-sleep" onclick="showTab('sleep',this)"><span class="ti">😴</span>Sleep</div>
   <div class="nav-tab" id="nav-supps" onclick="showTab('supps',this)"><span class="ti">💊</span>Supps</div>
@@ -329,6 +342,31 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="macro-field-wrap"><div class="input-label">Carbs g</div><input class="input-field" id="pf-ov-carb" type="number" placeholder="auto"></div>
     </div>
 
+    <div class="settings-section-title">Export Data</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Pick a date range and what to include, then export as a spreadsheet (CSV) or a printable report. Runs entirely on your device.</p>
+    <div class="macro-fields" style="grid-template-columns:1fr 1fr">
+      <div class="macro-field-wrap"><div class="input-label">From</div><input class="input-field" id="exp-from" type="date"></div>
+      <div class="macro-field-wrap"><div class="input-label">To</div><input class="input-field" id="exp-to" type="date"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin:10px 0">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="exp-cat-weights" checked> Weigh-ins</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="exp-cat-measurements" checked> Measurements</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="exp-cat-meals" checked> Macros / Meals</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="exp-cat-movement" checked> Calories Burnt / Steps</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="exp-cat-sleep" checked> Sleep</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="exp-cat-water"> Water</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="exp-cat-peptides"> Peptide Doses</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="exp-cat-fasting"> Fasting Sessions</label>
+    </div>
+    <div class="form-group">
+      <select class="input-field" id="exp-format">
+        <option value="csv">Spreadsheet (CSV)</option>
+        <option value="print">Printable report</option>
+      </select>
+    </div>
+    <button class="btn btn-secondary" style="margin-bottom:4px" onclick="runExport()">Export ↓</button>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5;min-height:14px" id="exp-status"></div>
+
     <button class="btn btn-primary" style="margin-top:16px" onclick="closeSettings()">Done</button>
   </div>
 </div>
@@ -338,7 +376,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <span id="edit-day-banner-text"></span>
   <button class="btn btn-secondary btn-sm" style="width:auto;padding:5px 10px;font-size:11px;flex-shrink:0" onclick="jumpToToday()">Jump to Today</button>
 </div>
-
 <!-- TODAY -->
 <div class="section hidden active" id="tab-today">
   <div class="card" style="padding:10px 14px">
@@ -427,6 +464,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     </div>
   </div>
 
+  <!-- LEFTOVERS -->
+  <div class="card">
+    <div class="card-title">🍽️ Log Leftovers</div>
+    <div class="info-box blue" style="margin-top:-4px">Didn't finish a plate? Photograph what's left, then either log it as its own entry or deduct it from the meal you just logged.</div>
+
+    <input type="file" id="lo-camera" accept="image/*" capture="environment" class="hidden" onchange="handleLeftoverPhoto(event)">
+    <input type="file" id="lo-gallery" accept="image/*" class="hidden" onchange="handleLeftoverPhoto(event)">
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn btn-primary" style="flex:1" onclick="document.getElementById('lo-camera').click()">📷 Take Photo</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('lo-gallery').click()">🖼️ From Gallery</button>
+    </div>
+    <div id="lo-preview" class="hidden">
+      <img id="lo-img" style="width:100%;border-radius:10px;max-height:180px;object-fit:cover;margin-bottom:10px">
+      <div id="lo-loading" class="hidden" style="text-align:center;padding:14px"><div class="dots"><span></span><span></span><span></span></div><div style="font-size:12px;color:var(--muted);margin-top:8px">Analysing...</div></div>
+      <div id="lo-result"></div>
+    </div>
+  </div>
+
   <!-- TEXT LOOKUP -->
   <div class="card">
     <div class="card-title">🔍 Look Up Macros</div>
@@ -505,6 +560,50 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div class="stat-card"><div class="stat-val" id="mv-today-cal">--</div><div class="stat-lbl" id="mv-cal-lbl">Cal burned today</div></div>
   </div>
   <div class="card"><div class="card-title">Movement History</div><div id="mv-history" style="font-size:13px;color:var(--muted)">No entries yet.</div></div>
+</div>
+
+<!-- FASTING -->
+<div class="section hidden" id="tab-fasting">
+  <div class="card">
+    <div class="card-title">Daily Eating Window</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Set the hours you eat within each day — the rest is your fast. Not locked to any fixed ratio.</div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px"><input type="checkbox" id="fw-enabled" onchange="toggleFastWindow()"> Enable daily eating window</label>
+    <div id="fw-config">
+      <div class="input-row">
+        <div style="flex:1"><div class="input-label">Eating window length (hrs)</div><input class="input-field" id="fw-hours" type="number" min="1" max="23" placeholder="6"></div>
+        <div style="flex:1"><div class="input-label">Window opens at</div><input class="input-field" id="fw-start" type="time"></div>
+      </div>
+      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="saveFastWindow()">Save window</button>
+    </div>
+    <div id="fw-status" style="margin-top:12px;text-align:center"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Extended Fast</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">For longer periodic fasts — 24h, 48h, 72h, 5 days, or your own target.</div>
+    <div id="fast-active-view" class="hidden">
+      <div class="fast-ring-wrap">
+        <svg width="160" height="160" viewBox="0 0 160 160"><circle cx="80" cy="80" r="70" fill="none" stroke="#E8F4F4" stroke-width="10"/><circle cx="80" cy="80" r="70" fill="none" stroke="#2A7B7B" stroke-width="10" stroke-dasharray="439.8" id="fast-ring" stroke-dashoffset="439.8" stroke-linecap="round"/></svg>
+        <div class="fast-ring-label"><div class="fast-ring-val" id="fast-elapsed">0h 0m</div><div class="fast-ring-sub" id="fast-target-lbl">of 24h target</div></div>
+      </div>
+      <div style="text-align:center;margin-bottom:12px"><span style="font-size:12px;color:var(--muted)" id="fast-start-lbl"></span></div>
+      <button class="btn btn-secondary" onclick="endExtendedFast()">End fast</button>
+    </div>
+    <div id="fast-setup-view">
+      <div class="fast-preset-grid">
+        <div class="fast-preset-btn" data-hrs="24" onclick="selectFastPreset(24,this)">24h</div>
+        <div class="fast-preset-btn" data-hrs="48" onclick="selectFastPreset(48,this)">48h</div>
+        <div class="fast-preset-btn" data-hrs="72" onclick="selectFastPreset(72,this)">72h</div>
+        <div class="fast-preset-btn" data-hrs="120" onclick="selectFastPreset(120,this)">5 days</div>
+      </div>
+      <div class="input-row">
+        <div style="flex:1"><div class="input-label">Or custom hours</div><input class="input-field" id="fast-custom-hrs" type="number" min="1" placeholder="e.g. 36"></div>
+      </div>
+      <button class="btn btn-primary" onclick="startExtendedFast()">Start fast</button>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">Fast History</div><div id="fast-history" style="font-size:13px;color:var(--muted)">No fasts logged yet.</div></div>
 </div>
 
 <!-- WEIGHT -->
@@ -766,9 +865,9 @@ function migrateArr(arr,prefix,dateField){
 }
 function migrateState(){
   if(!S.tombstones)S.tombstones=[];
-  if(!S.settings)S.settings={tabs:{weight:true,sleep:true,supps:true,peptides:false,ask:true}};
-  if(!S.settings.tabs)S.settings.tabs={weight:true,sleep:true,supps:true,peptides:false,ask:true};
-  ['weight','sleep','supps','ask'].forEach(k=>{if(typeof S.settings.tabs[k]!=='boolean')S.settings.tabs[k]=true;});
+  if(!S.settings)S.settings={tabs:{weight:true,sleep:true,supps:true,peptides:false,ask:true,fasting:true}};
+  if(!S.settings.tabs)S.settings.tabs={weight:true,sleep:true,supps:true,peptides:false,ask:true,fasting:true};
+  ['weight','sleep','supps','ask','fasting'].forEach(k=>{if(typeof S.settings.tabs[k]!=='boolean')S.settings.tabs[k]=true;});
   if(typeof S.settings.tabs.peptides!=='boolean')S.settings.tabs.peptides=false; // stays off until Lauren decides to use it
   if(!S.settings.streakMode)S.settings.streakMode='balanced'; // 'balanced' | 'protein' | 'calorie' — what counts as an amber day
   // Training level + dietitian overrides — backfill onto existing profiles so old saved data
@@ -847,6 +946,17 @@ function migrateState(){
   // Body measurements — dated log, one entry per day, same pattern as weight/sleep/movement
   if(!S.measurements)S.measurements=[];
   migrateArr(S.measurements,'ms','date');
+
+  // Fasting state — daily eating window + extended fasts. Defaults on since it's a requested port.
+  if(!S.fasting){
+    S.fasting={
+      windowEnabled:false, windowHours:6, windowStart:'12:00',
+      current:null, // {startedAt, targetHours}
+      log:[]
+    };
+  }
+  if(!S.fasting.log)S.fasting.log=[];
+  migrateArr(S.fasting.log,'fast');
 }
 
 // Note: no fiber field here — Lauren's tracker doesn't track fiber (matches her existing schema).
@@ -883,11 +993,145 @@ const SUPPS = [
   {id:"ta1",name:"Thymosin Alpha-1",dose:"1mg — Twice weekly (when started)",notes:""},
 ];
 
+// ─── DATA EXPORT ────────────────────────────────────────────────────────────
+// Pulls a date-ranged, category-selected export of tracked data — either a CSV for spreadsheets,
+// or a printable report (opens in a new tab; use the browser's Share/Print button to save it as a
+// PDF). Everything happens on-device, nothing is sent anywhere. No fiber column here — matches
+// Lauren's meal schema, which doesn't track fiber. Dates use plain new Date() comparisons rather
+// than the weightDateMs/parseAnyDate helpers Josh's tracker needs, since Lauren has no legacy
+// DD/MM/YYYY seed data to account for.
+function csvEscape(v){
+  if(v==null)return '';
+  const s=String(v);
+  return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+}
+function csvRow(arr){return arr.map(csvEscape).join(',');}
+function expDateInRange(dateStr,fromMs,toMs){
+  const d=new Date(dateStr);
+  if(isNaN(d))return true;
+  const ms=d.getTime();
+  return (fromMs==null||ms>=fromMs)&&(toMs==null||ms<=toMs);
+}
+function peptideNameById(id){const p=(S.peptides||[]).find(p=>p.id===id);return p?p.name:id;}
+
+function buildExportSections(cats,fromMs,toMs){
+  const sections=[];
+  if(cats.weights){
+    const rows=[...(S.weights||[])].filter(w=>expDateInRange(w.date,fromMs,toMs)).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    sections.push({title:'Weigh-ins',headers:['Date','Weight (kg)'],rows:rows.map(w=>[w.date,w.weight])});
+  }
+  if(cats.measurements){
+    const rows=[...(S.measurements||[])].filter(m=>expDateInRange(m.date,fromMs,toMs)).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    const headers=['Date','Notes',...MEASURE_FIELDS.flatMap(f=>f.single?[f.label]:[f.label+' L',f.label+' R'])];
+    sections.push({title:'Measurements',headers,rows:rows.map(m=>[m.date,m.notes||'',...MEASURE_FIELDS.flatMap(f=>f.single?[m[f.key]??'']:[m[f.key+'_l']??'',m[f.key+'_r']??''])])});
+  }
+  if(cats.meals){
+    const rows=[...(S.meals||[])].filter(m=>expDateInRange(m.date,fromMs,toMs)).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    sections.push({title:'Macros / Meals',headers:['Date','Time','Item','Calories','Protein (g)','Fat (g)','Carbs (g)'],rows:rows.map(m=>[m.date,m.time||'',m.name||'',m.cal||0,m.pro||0,m.fat||0,m.carb||0])});
+  }
+  if(cats.movement){
+    const rows=[...(S.movement||[])].filter(m=>expDateInRange(m.date,fromMs,toMs)).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    sections.push({title:'Calories Burnt / Steps',headers:['Date','Steps','Calories Burnt'],rows:rows.map(m=>[m.date,m.steps||0,m.calBurned||0])});
+  }
+  if(cats.sleep){
+    const rows=[...(S.sleep||[])].filter(s=>expDateInRange(s.date,fromMs,toMs)).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    sections.push({title:'Sleep',headers:['Date','Total (hrs)','Deep (hrs)','REM (hrs)','Notes'],rows:rows.map(s=>[s.date,s.total,s.deep||0,s.rem||0,s.notes||''])});
+  }
+  if(cats.water){
+    const rows=[...(S.water||[])].filter(w=>expDateInRange(w.date,fromMs,toMs)).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    sections.push({title:'Water',headers:['Date','ml'],rows:rows.map(w=>[w.date,w.ml])});
+  }
+  if(cats.peptides){
+    const rows=[...(S.peptideLogs||[])].filter(p=>expDateInRange(p.date,fromMs,toMs)).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    sections.push({title:'Peptide Doses',headers:['Date','Peptide','Units','mg','Notes'],rows:rows.map(p=>[p.date,peptideNameById(p.peptideId),p.units,p.mg,p.notes||''])});
+  }
+  if(cats.fasting){
+    const rows=[...((S.fasting&&S.fasting.log)||[])].filter(f=>expDateInRange(new Date(f.startedAt).toDateString(),fromMs,toMs)).sort((a,b)=>(a.startedAt||0)-(b.startedAt||0));
+    sections.push({title:'Fasting Sessions',headers:['Started','Ended','Target (hrs)','Actual (hrs)'],rows:rows.map(f=>[new Date(f.startedAt).toLocaleString('en-AU'),f.endedAt?new Date(f.endedAt).toLocaleString('en-AU'):'',f.targetHours,f.actualHours!=null?f.actualHours.toFixed(1):''])});
+  }
+  return sections;
+}
+
+function runExport(){
+  const cats={
+    weights:document.getElementById('exp-cat-weights').checked,
+    measurements:document.getElementById('exp-cat-measurements').checked,
+    meals:document.getElementById('exp-cat-meals').checked,
+    movement:document.getElementById('exp-cat-movement').checked,
+    sleep:document.getElementById('exp-cat-sleep').checked,
+    water:document.getElementById('exp-cat-water').checked,
+    peptides:document.getElementById('exp-cat-peptides').checked,
+    fasting:document.getElementById('exp-cat-fasting').checked,
+  };
+  const statusEl=document.getElementById('exp-status');
+  if(!Object.values(cats).some(Boolean)){
+    statusEl.textContent='Pick at least one category.';
+    return;
+  }
+  const fromVal=document.getElementById('exp-from').value;
+  const toVal=document.getElementById('exp-to').value;
+  const fromMs=fromVal?new Date(fromVal+'T00:00:00').getTime():null;
+  const toMs=toVal?new Date(toVal+'T23:59:59').getTime():null;
+  const sections=buildExportSections(cats,fromMs,toMs);
+  const format=document.getElementById('exp-format').value;
+  const stamp=new Date().toISOString().slice(0,10);
+  if(format==='csv'){
+    let out='';
+    sections.forEach(sec=>{
+      out+='=== '+sec.title+' ===\n';
+      out+=csvRow(sec.headers)+'\n';
+      sec.rows.forEach(r=>{out+=csvRow(r)+'\n';});
+      out+='\n';
+    });
+    const blob=new Blob([out],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='lauren-tracker-export-'+stamp+'.csv';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+    statusEl.textContent='CSV downloaded.';
+  } else {
+    const html=buildReportHtml(sections,fromVal,toVal);
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    window.open(url,'_blank');
+    statusEl.textContent='Report opened in a new tab — use Share → Print to save as PDF.';
+  }
+}
+
+function buildReportHtml(sections,fromVal,toVal){
+  const rangeLabel=(fromVal||toVal)?((fromVal||'earliest')+' to '+(toVal||'latest')):'Full history';
+  const secHtml=sections.map(sec=>`
+    <h2>${sec.title}</h2>
+    ${sec.rows.length?`<table>
+      <thead><tr>${sec.headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${sec.rows.map(r=>`<tr>${r.map(c=>`<td>${c===''||c==null?'—':c}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`:`<p class="empty">No entries in this range.</p>`}
+  `).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Lauren's Tracker — Export</title>
+  <style>
+    body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a2332;padding:24px;max-width:800px;margin:0 auto}
+    h1{font-size:20px;margin-bottom:2px}
+    .sub{color:#667;font-size:13px;margin-bottom:24px}
+    h2{font-size:15px;margin-top:28px;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:4px}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #eef1f4}
+    th{background:#f7f9fb;font-weight:600}
+    .empty{color:#98a2b3;font-size:12px;font-style:italic}
+    @media print{ body{padding:0} h2{page-break-after:avoid} tr{page-break-inside:avoid} }
+  </style></head><body>
+  <h1>Lauren's Tracker — Data Export</h1>
+  <div class="sub">${rangeLabel} · generated ${new Date().toLocaleString('en-AU')}</div>
+  ${secHtml}
+  </body></html>`;
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 window.onload = () => {
   loadLocal(); updateDate(); renderQuickAdd(); checkDayReset();
   renderMeasurementsFieldsHtml();
   if(S.profile){showApp();renderViewDate();}
+  updateFastingTab();
 };
 function loadLocal(){try{const d=localStorage.getItem('lauren_tracker_v1');if(d)S={...S,...JSON.parse(d)};}catch(e){}migrateState();}
 function saveLocal(){
@@ -913,6 +1157,7 @@ function showApp(){document.getElementById('setup-overlay').classList.add('hidde
 
 // ─── SETTINGS (which tabs are visible — Today/Log/Move always on) ────────────
 const OPTIONAL_TABS=[
+  {key:'fasting',label:'⏳ Fasting'},
   {key:'weight',label:'📏 Measurements'},
   {key:'sleep',label:'😴 Sleep'},
   {key:'supps',label:'💊 Supps'},
@@ -1038,7 +1283,7 @@ function finishSetup(){
 }
 
 // ─── TABS ─────────────────────────────────────────────────────────────────────
-function showTab(name,el){document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+name).classList.add('active');if(el)el.classList.add('active');}
+function showTab(name,el){document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+name).classList.add('active');if(el)el.classList.add('active');if(name==='fasting')updateFastingTab();}
 
 // ─── DATED-LOG HELPERS (meals/water/movement now persist forever, not just "today") ──
 function mealsForDate(dateStr){return S.meals.filter(m=>m.date===dateStr);}
@@ -1048,7 +1293,6 @@ function sleepForDate(dateStr){return S.sleep.find(s=>s.date===dateStr)||null;}
 function weightForDate(dateStr){return S.weights.find(w=>w.date===dateStr)||null;}
 function totalsForDate(dateStr){return mealsForDate(dateStr).reduce((a,m)=>({cal:a.cal+(+m.cal||0),pro:a.pro+(+m.pro||0),fat:a.fat+(+m.fat||0),carb:a.carb+(+m.carb||0)}),{cal:0,pro:0,fat:0,carb:0});}
 function waterTotalForDate(dateStr){return waterForDate(dateStr).reduce((a,w)=>a+(w.ml||0),0);}
-
 // ─── MACROS ───────────────────────────────────────────────────────────────────
 function getTotals(){return totalsForDate(viewDateStr());}
 function updateMacros(){
@@ -1088,7 +1332,12 @@ function updateMealsList(){
   const el=document.getElementById('meals-list');
   const meals=mealsForDate(viewDateStr());
   if(!meals.length){el.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">No meals logged yet.</div>';return;}
-  el.innerHTML=meals.map(m=>`<div class="meal-item"><div class="meal-emoji">${m.emoji||'🍽️'}</div><div class="meal-info"><div class="meal-name">${m.name}</div><div class="meal-macros">${m.cal} cal · ${m.pro}g protein · ${m.fat}g fat · ${m.carb}g carbs</div></div><span class="meal-del" style="font-size:17px" onclick="editMeal('${m.id}')" title="Edit">✎</span><div class="meal-del" onclick="delMeal('${m.id}')" title="Delete">×</div></div>`).join('');
+  // Deduction lines (from the Leftovers feature) get a dashed/tinted style so they read as an
+  // adjustment rather than a separate food item, without needing a whole new CSS class.
+  el.innerHTML=meals.map(m=>{
+    const dedStyle=m.isDeduction?' style="border:1px dashed var(--border);background:var(--amber-pale)"':'';
+    return `<div class="meal-item"${dedStyle}><div class="meal-emoji">${m.emoji||'🍽️'}</div><div class="meal-info"><div class="meal-name">${m.name}</div><div class="meal-macros">${m.cal} cal · ${m.pro}g protein · ${m.fat}g fat · ${m.carb}g carbs</div></div><span class="meal-del" style="font-size:17px" onclick="editMeal('${m.id}')" title="Edit">✎</span><div class="meal-del" onclick="delMeal('${m.id}')" title="Delete">×</div></div>`;
+  }).join('');
 }
 function delMeal(id){if(mealEditId===id)cancelMealEdit();S.meals=S.meals.filter(m=>m.id!==id);markDeleted('meal',id);saveLocal();updateAll();}
 function addMeal(m){S.meals.push({...m,id:newId('meal'),date:viewDateStr(),updatedAt:Date.now(),time:new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'})});saveLocal();updateAll();}
@@ -1285,7 +1534,6 @@ function editLookup(){
   document.getElementById('m-food').scrollIntoView({behavior:'smooth'});
   lookupPending=null;
 }
-
 // ─── PHOTO LOG ────────────────────────────────────────────────────────────────
 async function handleMealPhoto(event){
   const file=event.target.files[0];if(!file)return;
@@ -1325,6 +1573,116 @@ async function handleMealPhoto(event){
   reader.readAsDataURL(file);event.target.value='';
 }
 function logPhotoMeal(m){addMeal(m);document.getElementById('ph-preview').classList.add('hidden');}
+
+// ─── LEFTOVERS ──────────────────────────────────────────────────────────────
+// Photograph what's left on the plate after a meal. Reuses the same Worker/photo-analysis call
+// as the main Photo Log, but keeps its own state so a leftovers scan can never clobber an
+// in-progress meal-photo scan. The result offers two choices: log the leftovers as their own
+// entry, or deduct them from the meal just logged — as a visible second "Leftovers removed" line,
+// not a silent edit to the original entry. Soy risk is checked the same way as her other photo/
+// lookup features, since a leftover plate can just as easily contain a soy risk as a fresh one.
+function phEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let lastLeftoverB64=null,lastLeftoverType=null,currentLeftoverMeal=null;
+function handleLeftoverPhoto(event){
+  const file=event.target.files[0];if(!file)return;
+  const preview=document.getElementById('lo-preview'),img=document.getElementById('lo-img'),loading=document.getElementById('lo-loading'),result=document.getElementById('lo-result');
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    img.src=e.target.result;preview.classList.remove('hidden');loading.classList.remove('hidden');result.innerHTML='';
+    lastLeftoverB64=e.target.result.split(',')[1];lastLeftoverType=file.type;currentLeftoverMeal=null;
+    const prompt='Analyse this photo of LEFTOVER food remaining on a plate, for an adult female — estimate the macros of only what is still visible/uneaten, not a full serving. Cooked weight assumed. Return ONLY valid JSON: {"name":"short description of the leftover food","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the food clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).';
+    try{
+      const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-6',max_tokens:400,
+          messages:[{role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:lastLeftoverType,data:lastLeftoverB64}},
+            {type:'text',text:prompt}
+          ]}]
+        })
+      });
+      const data=await resp.json();
+      if(data.error){throw new Error(data.error.message);}
+      const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
+      const clean=text.replace(/```json\n?|```/g,'').trim();
+      const meal=JSON.parse(clean);
+      meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
+      currentLeftoverMeal=meal;
+      loading.classList.add('hidden');
+      renderLeftoverResult(meal);
+    }catch(err){
+      loading.classList.add('hidden');
+      result.innerHTML=`<div style="color:var(--muted);font-size:13px;padding:8px 0">Couldn't analyse this photo. Try again with better light, or skip leftovers tracking for this meal.
+        <div style="margin-top:8px"><button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('lo-preview').classList.add('hidden')">Cancel</button></div>
+      </div>`;
+    }
+  };
+  reader.readAsDataURL(file);event.target.value='';
+}
+// Picks the most recently logged real meal for the date being viewed — the thing a leftovers photo
+// almost always belongs to. Deduction entries are excluded so "deduct from last meal" can never
+// target an earlier deduction line.
+function lastLoggableMealForDate(dateStr){
+  const meals=mealsForDate(dateStr).filter(m=>!m.isDeduction);
+  if(!meals.length)return null;
+  return meals.reduce((a,b)=>(b.updatedAt||0)>(a.updatedAt||0)?b:a);
+}
+function renderLeftoverResult(meal){
+  const result=document.getElementById('lo-result');
+  const target=lastLoggableMealForDate(viewDateStr());
+  result.innerHTML=`<div style="padding:8px 0">
+    <div class="form-group"><div class="input-label">Food (edit if the AI got it wrong)</div><input class="input-field" id="lo-name" value="${phEsc(meal.name)}"></div>
+    <div class="macro-fields" id="lo-macro-fields">
+      <div class="macro-field-wrap"><div class="input-label">Cal</div><input class="input-field" id="lo-cal" type="number" value="${meal.cal}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Protein g</div><input class="input-field" id="lo-pro" type="number" value="${meal.pro}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Fat g</div><input class="input-field" id="lo-fat" type="number" value="${meal.fat}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Carbs g</div><input class="input-field" id="lo-carb" type="number" value="${meal.carb}"></div>
+    </div>
+    ${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given your anaphylactic soy allergy.</div>':''}
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${phEsc(meal.note||'')}</div>
+    ${target?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Deducting will subtract from: <strong>${phEsc(target.name)}</strong>${target.time?' ('+target.time+')':''}</div>`:`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">No meal logged yet today to deduct from — you can still log the leftovers as their own entry.</div>`}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" style="width:auto" onclick="logLeftoversSeparately()">➕ Log separately</button>
+      <button class="btn btn-secondary btn-sm" style="width:auto" ${target?'':'disabled'} onclick="deductLeftoversFromLastMeal()">➖ Deduct from last meal</button>
+      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('lo-preview').classList.add('hidden')">Cancel</button>
+    </div>
+  </div>`;
+}
+// Coerces to numbers here (unlike getPhotoFieldsAsMeal on Josh's tracker) because Lauren's addMeal()
+// does not coerce numeric fields itself — matches the same-typed pattern her addManual() already uses.
+function getLeftoverFieldsAsMeal(){
+  return {
+    name:document.getElementById('lo-name').value,
+    cal:+document.getElementById('lo-cal').value||0,
+    pro:+document.getElementById('lo-pro').value||0,
+    fat:+document.getElementById('lo-fat').value||0,
+    carb:+document.getElementById('lo-carb').value||0,
+    emoji:(currentLeftoverMeal&&currentLeftoverMeal.emoji)||'🍽️'
+  };
+}
+function logLeftoversSeparately(){
+  addMeal(getLeftoverFieldsAsMeal());
+  document.getElementById('lo-preview').classList.add('hidden');
+}
+function deductLeftoversFromLastMeal(){
+  const target=lastLoggableMealForDate(viewDateStr());
+  if(!target)return;
+  const vals=getLeftoverFieldsAsMeal();
+  // Clamp the deduction's magnitude to the target meal's own values, so subtracting can never push
+  // the day's totals negative — if the AI overestimates the leftover, it just zeroes that meal out.
+  const clamp=(v,max)=>Math.min(Math.abs(+v||0),Math.abs(+max||0));
+  const dedCal=clamp(vals.cal,target.cal),dedPro=clamp(vals.pro,target.pro),dedFat=clamp(vals.fat,target.fat),dedCarb=clamp(vals.carb,target.carb);
+  addMeal({
+    name:'Leftovers removed — '+(vals.name||'from plate'),
+    cal:-dedCal,pro:-dedPro,fat:-dedFat,carb:-dedCarb,
+    emoji:'➖',
+    isDeduction:true,
+    deductedFrom:target.id
+  });
+  document.getElementById('lo-preview').classList.add('hidden');
+}
 
 // ─── WEIGHT ───────────────────────────────────────────────────────────────────
 function logWeight(){
@@ -1368,9 +1726,25 @@ function updateWeight(){
   const rem=latest-goal;
   document.getElementById('prog-txt').textContent=rem>0?rem.toFixed(1)+' kg to goal':'🎉 Goal reached!';
   document.getElementById('w-advice').innerHTML=rem>0?`At 0.4kg/week, roughly <strong>${Math.round(rem/0.4)} weeks</strong> to reach ${goal}kg. Reta will accelerate that as dose increases.`:`🏆 Goal reached.`;
-  document.getElementById('w-history').innerHTML=[...S.weights].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10).map(e=>`<div class="history-row"><span>${e.date}</span><span style="font-weight:700">${e.weight} kg</span></div>`).join('')||'No entries yet.';
+  document.getElementById('w-history').innerHTML=[...S.weights].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10).map(e=>`<div class="history-row"><span>${e.date}</span><span style="font-weight:700">${e.weight} kg <span class="meal-del" style="font-size:15px" onclick="delWeight('${e.id}')" title="Delete">×</span></span></div>`).join('')||'No entries yet.';
 }
-
+function delWeight(id){
+  S.weights=S.weights.filter(w=>w.id!==id);
+  markDeleted('w',id);
+  saveLocal();
+  updateWeight();
+  loadWeightIntoForm();
+}
+// Paging to a past day (or reloading on today) shows whatever weight is already logged for that
+// date in the input field, so you can see it and correct it instead of guessing whether typing a
+// new number will overwrite it. Deliberately NOT part of updateAll() — same reasoning as
+// loadMeasurementsIntoForm(): updateAll() also runs on every background Drive re-sync, and
+// re-populating this field then would blow away whatever you're mid-typing.
+function loadWeightIntoForm(){
+  const existing=weightForDate(viewDateStr());
+  const el=document.getElementById('w-input');
+  if(el)el.value=existing?existing.weight:'';
+}
 // ─── MEASUREMENTS ─────────────────────────────────────────────────────────────
 // Builds the dynamic form once from MEASURE_FIELDS — inline ⓘ tip per field, plus the
 // collapsible general-tips card wired up in the HTML already.
@@ -1489,7 +1863,6 @@ function deleteMeasurementEntry(id){
   saveLocal();
   renderMeasurementsHistory();
 }
-
 // ─── SLEEP ────────────────────────────────────────────────────────────────────
 let sleepEditId=null;
 function hm(h,m){return (+h||0)+((+m||0)/60);} // hours+minutes -> decimal hours
@@ -1605,6 +1978,103 @@ function updateMovement(){
       .map(m=>`<div class="history-row"><span style="color:var(--muted)">${m.date}</span><span>${m.steps.toLocaleString()} steps · ${m.calBurned.toLocaleString()} cal burned <span class="meal-del" style="font-size:15px" onclick="delMovement('${m.id}')">×</span></span></div>`).join('')||'No entries in the last 7 days.';
   }
 }
+
+// ─── FASTING ──────────────────────────────────────────────────────────────────
+function toggleFastWindow(){
+  const on=document.getElementById('fw-enabled').checked;
+  document.getElementById('fw-config').style.opacity=on?'1':'0.5';
+}
+function saveFastWindow(){
+  const enabled=document.getElementById('fw-enabled').checked;
+  const hours=+document.getElementById('fw-hours').value||S.fasting.windowHours||6;
+  const start=document.getElementById('fw-start').value||S.fasting.windowStart||'12:00';
+  S.fasting.windowEnabled=enabled;
+  S.fasting.windowHours=hours;
+  S.fasting.windowStart=start;
+  saveLocal();
+  updateFastingTab();
+}
+function fastWindowStatus(){
+  if(!S.fasting.windowEnabled)return null;
+  const now=new Date();
+  const [sh,sm]=(S.fasting.windowStart||'12:00').split(':').map(Number);
+  const start=new Date(now);start.setHours(sh,sm,0,0);
+  const end=new Date(start.getTime()+S.fasting.windowHours*3600*1000);
+  const open = now>=start && now<end;
+  let msUntilChange;
+  if(open){ msUntilChange=end-now; }
+  else if(now<start){ msUntilChange=start-now; }
+  else { const nextStart=new Date(start.getTime()+24*3600*1000); msUntilChange=nextStart-now; }
+  const h=Math.floor(msUntilChange/3600000),m=Math.floor((msUntilChange%3600000)/60000);
+  return {open,h,m};
+}
+function updateFastWindowStatus(){
+  const el=document.getElementById('fw-status');
+  if(!el)return;
+  if(!S.fasting.windowEnabled){el.innerHTML='';return;}
+  const st=fastWindowStatus();
+  el.innerHTML=`<span class="fast-status-badge ${st.open?'open':'closed'}">${st.open?'🟢 Eating window open':'🟠 Fasting'}</span><div style="font-size:12px;color:var(--muted);margin-top:6px">${st.open?'Closes':'Opens'} in ${st.h}h ${st.m}m</div>`;
+}
+function selectFastPreset(hrs,el){
+  document.querySelectorAll('.fast-preset-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('fast-custom-hrs').value=hrs;
+}
+function startExtendedFast(){
+  const hrs=+document.getElementById('fast-custom-hrs').value;
+  if(!hrs||hrs<1){alert('Pick a preset or enter custom hours.');return;}
+  S.fasting.current={startedAt:Date.now(),targetHours:hrs};
+  saveLocal();
+  updateFastingTab();
+}
+function endExtendedFast(){
+  if(!S.fasting.current)return;
+  const elapsedMs=Date.now()-S.fasting.current.startedAt;
+  const elapsedHours=elapsedMs/3600000;
+  S.fasting.log.unshift({id:newId('fast'),updatedAt:Date.now(),startedAt:S.fasting.current.startedAt,endedAt:Date.now(),targetHours:S.fasting.current.targetHours,actualHours:elapsedHours});
+  if(S.fasting.log.length>30)S.fasting.log=S.fasting.log.slice(0,30);
+  S.fasting.current=null;
+  saveLocal();
+  updateFastingTab();
+}
+function updateExtendedFastRing(){
+  const activeView=document.getElementById('fast-active-view'),setupView=document.getElementById('fast-setup-view');
+  if(!S.fasting.current){
+    activeView.classList.add('hidden');
+    setupView.classList.remove('hidden');
+    return;
+  }
+  activeView.classList.remove('hidden');
+  setupView.classList.add('hidden');
+  const elapsedMs=Date.now()-S.fasting.current.startedAt;
+  const elapsedH=Math.floor(elapsedMs/3600000),elapsedM=Math.floor((elapsedMs%3600000)/60000);
+  document.getElementById('fast-elapsed').textContent=elapsedH+'h '+elapsedM+'m';
+  document.getElementById('fast-target-lbl').textContent='of '+S.fasting.current.targetHours+'h target';
+  document.getElementById('fast-start-lbl').textContent='Started '+new Date(S.fasting.current.startedAt).toLocaleString('en-AU',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  const pct=Math.min((elapsedMs/3600000)/S.fasting.current.targetHours*100,100);
+  document.getElementById('fast-ring').style.strokeDashoffset=439.8*(1-pct/100);
+}
+function renderFastHistory(){
+  const el=document.getElementById('fast-history');if(!el)return;
+  const log=S.fasting.log||[];
+  el.innerHTML=log.map(f=>{
+    const h=Math.floor(f.actualHours),m=Math.round((f.actualHours-h)*60);
+    return `<div class="history-row"><span style="color:var(--muted)">${new Date(f.startedAt).toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</span><span>${h}h ${m}m ${f.actualHours>=f.targetHours?'✅':'(target '+f.targetHours+'h)'}</span></div>`;
+  }).join('')||'No fasts logged yet.';
+}
+function updateFastingTab(){
+  const tab=document.getElementById('tab-fasting');
+  if(!tab)return;
+  document.getElementById('fw-enabled').checked=!!S.fasting.windowEnabled;
+  document.getElementById('fw-hours').value=S.fasting.windowHours||6;
+  document.getElementById('fw-start').value=S.fasting.windowStart||'12:00';
+  document.getElementById('fw-config').style.opacity=S.fasting.windowEnabled?'1':'0.5';
+  updateFastWindowStatus();
+  updateExtendedFastRing();
+  renderFastHistory();
+}
+// Keep the live countdown/elapsed views fresh without needing a manual refresh
+setInterval(()=>{ if(document.getElementById('tab-fasting')&&document.getElementById('tab-fasting').classList.contains('active')) updateFastingTab(); },30000);
 
 // ─── DAY STATUS (traffic light) & GRACE-DAY STREAK ────────────────────────────
 // Single source of truth for whether a given date was green/amber/red — used by
@@ -1767,6 +2237,7 @@ function renderViewDate(){
   }
   updateAll();
   loadMeasurementsIntoForm(); // only on an actual day change/initial load — see note in updateAll()
+  loadWeightIntoForm(); // same reasoning — see note above delWeight()
   updateOtherLogs();
 }
 // Sleep/weight/movement/measurements summary for the viewed day — only shown when paging back, since those already have their own live tabs for today
@@ -1785,7 +2256,6 @@ function updateOtherLogs(){
   if(ms)html+=`<div class="history-row"><span>📏 Measurements</span><span style="font-weight:700;text-align:right;max-width:65%">${fmtMeasureEntry(ms)||'Logged'}</span></div>`;
   document.getElementById('other-logs-body').innerHTML=html;
 }
-
 // ─── PEPTIDES (built ahead of time — off by default until Lauren decides to use it) ──
 function getPeptideWeek(p){
   if(p.dosing.type!=='titration')return null;
@@ -1961,16 +2431,84 @@ function buildSys(){
   const p=S.profile,t=getTotals();
   const suppLines=(S.supplements||[]).map(s=>`${s.name} (${s.dose})`).join(', ');
   const peptideLines=(S.peptides||[]).map(pep=>pep.dosing.type==='titration'?`${pep.name} (titrating, week ${getPeptideWeek(pep)}/${pep.dosing.schedule.length})`:`${pep.name} (${pep.dosing.doseLabel})`).join('; ');
+  const fastingLine=S.fasting&&S.fasting.windowEnabled?`Daily eating window: ${S.fasting.windowHours}h starting ${S.fasting.windowStart}.`:'';
   return `You are Lauren's personal wellness assistant. Lauren: female, height ${p?p.height:158}cm, current ~${S.weights.length?S.weights[S.weights.length-1].weight:(p?p.current:'unknown')}kg, goal ${p?p.goal:'unknown'}kg.
 
 CRITICAL ALLERGY: Lauren is ANAPHYLACTIC to soy protein. She has had two hospital-level reactions. She carries an EpiPen. Always flag any food or supplement that may contain soy protein, soy lecithin, or soy derivatives. Exception: fermented soy products (soy sauce, miso, tempeh) are generally tolerated as fermentation breaks down the allergenic proteins. Trace contamination ("may contain soy") has caused inconsistent reactions — treat with caution.
 
 Current supplements: ${suppLines||'none'}.
 Peptides in use: ${peptideLines||'none'}.
+${fastingLine}
 
 Today: ${t.cal} cal, ${t.pro}g protein (goal ${p?p.protein:184}g), ${t.fat}g fat, ${t.carb}g carbs, ${getWaterTotal()}ml water.
 
-Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food, supplement, or peptide suggestion against the soy allergy before recommending it.`;
+Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food, supplement, or peptide suggestion against the soy allergy before recommending it.
+
+${ACTION_PROTOCOL}`;
+}
+
+// Instructs the model on how to write back to the tracker via chat, and defines the exact
+// wire format the client parses out of the reply to actually perform the write.
+const ACTION_PROTOCOL=`If Lauren clearly and explicitly asks you to log/add/record/track something (a meal, water, weight, steps/movement, or sleep), do it by including an action block in your reply — don't just tell her to go add it herself. Format, one per item, anywhere in your reply:
+[ACTION:log_meal]{"name":"...","cal":N,"pro":N,"fat":N,"carb":N,"soy_risk":boolean,"emoji":"one emoji"}[/ACTION]
+[ACTION:log_water]{"ml":N}[/ACTION]
+[ACTION:log_weight]{"weight":N}[/ACTION]
+[ACTION:log_movement]{"steps":N,"calBurned":N}[/ACTION]
+[ACTION:log_sleep]{"total":N,"deep":N,"rem":N,"notes":"..."}[/ACTION]
+(total/deep/rem in hours/minutes respectively, matching how they're entered elsewhere in the app. Set "soy_risk" true only if the food clearly contains non-fermented soy — tofu, soy milk, edamame, soy protein isolate — so it can be flagged given her anaphylactic soy allergy.)
+Estimate macros for a described meal the same way you would for a normal food lookup — reasonable confidence is fine, cooked weight assumed. Only emit an action block when she has actually asked you to log something, never just because food or activity was mentioned in passing. If what she wants logged is too vague to estimate at all, ask a clarifying question instead of guessing wildly. You can emit more than one action block if she's asked to log several things at once. Keep your normal reply text short when you've logged something — a brief natural confirmation is enough, the app will also show its own confirmation.`;
+
+// ─── CHAT ACTIONS (lets the assistant write to the tracker, not just read it) ────────────
+function chatLogWeight(w){
+  if(!w)return;
+  const dateStr=viewDateStr();
+  const existing=weightForDate(dateStr);
+  if(existing){
+    existing.weight=w; existing.updatedAt=Date.now();
+  } else {
+    const entry={id:newId('w'),updatedAt:Date.now(),date:dateStr,weight:w};
+    const idx=S.weights.findIndex(e=>new Date(e.date)>new Date(entry.date));
+    if(idx===-1)S.weights.push(entry);else S.weights.splice(idx,0,entry);
+  }
+  if(S.weights.length>90)S.weights=S.weights.slice(-90);
+  saveLocal();updateWeight();
+}
+function chatLogMovement(steps,calBurned){
+  const existing=movementForDate(viewDateStr());
+  if(existing){existing.steps=steps||existing.steps;existing.calBurned=calBurned||existing.calBurned;existing.updatedAt=Date.now();}
+  else{S.movement.push({id:newId('movement'),updatedAt:Date.now(),date:viewDateStr(),steps:steps||0,calBurned:calBurned||0});}
+  saveLocal();updateMovement();updateTrafficLight();
+}
+function chatLogSleep(total,deep,rem,notes){
+  if(!total)return;
+  const existing=sleepForDate(viewDateStr());
+  if(existing){existing.total=total;existing.deep=deep||0;existing.rem=rem||0;existing.notes=notes||existing.notes;existing.updatedAt=Date.now();}
+  else{S.sleep.unshift({id:newId('sleep'),updatedAt:Date.now(),date:viewDateStr(),total,deep:deep||0,rem:rem||0,notes:notes||''});if(S.sleep.length>30)S.sleep=S.sleep.slice(0,30);}
+  saveLocal();updateSleepView();renderSleepHistory();
+}
+// Lauren's addMeal() doesn't coerce numeric fields itself, so values are coerced here before the push.
+function executeChatAction(type,data){
+  try{
+    switch(type){
+      case 'log_meal':
+        addMeal({name:data.name||'Logged via chat',cal:+data.cal||0,pro:+data.pro||0,fat:+data.fat||0,carb:+data.carb||0,emoji:data.emoji||'🍽️'});
+        return (data.soy_risk?'⚠️ Possible soy content — check before eating. ':'')+`✅ Logged: ${data.emoji||'🍽️'} ${data.name} — ${Math.round(+data.cal||0)} cal, ${Math.round(+data.pro||0)}g protein`;
+      case 'log_water':
+        addWater(+data.ml||0);
+        return `✅ Logged: 💧 ${+data.ml||0}ml water`;
+      case 'log_weight':
+        chatLogWeight(+data.weight||0);
+        return `✅ Logged: ⚖️ ${data.weight}kg`;
+      case 'log_movement':
+        chatLogMovement(+data.steps||0,+data.calBurned||0);
+        return `✅ Logged: 🏃 ${data.steps||0} steps, ${data.calBurned||0} cal burned`;
+      case 'log_sleep':
+        chatLogSleep(+data.total||0,+data.deep||0,+data.rem||0,data.notes||'');
+        return `✅ Logged: 😴 ${data.total}h sleep`;
+      default:
+        return null;
+    }
+  }catch(e){console.error('chat action error',e);return '⚠️ Tried to log that but something went wrong — add it manually to be safe.';}
 }
 async function sendChat(imgB64,imgType){
   const input=document.getElementById('chat-in'),text=input.value.trim();
@@ -1983,9 +2521,19 @@ async function sendChat(imgB64,imgType){
     const msgs=[{role:'user',content:'System: '+buildSys()},{role:'assistant',content:'Ready to help.'},...chatHistory];
     const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:800,messages:msgs})});
     const data=await resp.json();
-    const reply=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
-    loading.remove();appendMsg('ai',reply);chatHistory.push({role:'assistant',content:reply});
+    let reply=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
+    // Parse and execute any action blocks, then strip them from what's actually shown
+    const actionRegex=/\[ACTION:(\w+)\](\{[\s\S]*?\})\[\/ACTION\]/g;
+    const confirmations=[];let am;
+    while((am=actionRegex.exec(reply))!==null){
+      try{const parsed=JSON.parse(am[2]);const conf=executeChatAction(am[1],parsed);if(conf)confirmations.push(conf);}
+      catch(err){console.error('action parse error',err);}
+    }
+    let cleanReply=reply.replace(actionRegex,'').trim();
+    if(confirmations.length)cleanReply=(cleanReply?cleanReply+'\n\n':'')+confirmations.join('\n');
+    loading.remove();appendMsg('ai',cleanReply);chatHistory.push({role:'assistant',content:cleanReply});
     if(chatHistory.length>20)chatHistory=chatHistory.slice(-20);
+    if(confirmations.length){updateAll();updateTrafficLight();}
   }catch(e){loading.remove();appendMsg('ai',"Can't connect right now. Try again.");}
   document.getElementById('chat-btn').disabled=false;
 }
@@ -2069,7 +2617,6 @@ function removeSupp(id){
   markDeleted('supplement',id);
   saveLocal();renderSupps();
 }
-
 // ─── GOOGLE DRIVE SYNC ────────────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID = '93450585738-k7hsn3fjsu69sigcktdfftfcsjk91qcu.apps.googleusercontent.com';
 const DRIVE_FILE_NAME = 'lauren-tracker-data.json';
@@ -2246,7 +2793,6 @@ async function findOrCreateDriveFile(){
     driveFileId = createData.id;
   }
 }
-
 async function loadFromDrive(){
   if(!driveFileId) return;
   try{
@@ -2274,6 +2820,12 @@ async function loadFromDrive(){
         S.quickFoods = mergeById(S.quickFoods, driveData.quickFoods, 'quickfood');
         dedupeQuickFoodsByName(); // clean up any same-name duplicates the Drive merge just re-introduced
         S.measurements = mergeById(S.measurements, driveData.measurements, 'measurement').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
+        if(driveData.fasting){
+          if(!S.fasting)S.fasting={windowEnabled:false,windowHours:6,windowStart:'12:00',current:null,log:[]};
+          S.fasting.log = mergeById(S.fasting.log, driveData.fasting.log, 'fast');
+          // Settings-like scalars: remote wins only if we don't have an active local fast in progress
+          if(!S.fasting.current && driveData.fasting.current) S.fasting.current = driveData.fasting.current;
+        }
         if(driveData.streak && driveData.streak.log){
           if(!S.streak)S.streak={count:0,longest:0,log:[]};
           S.streak.log = mergeById(S.streak.log, driveData.streak.log, 'streak_log');
@@ -2290,6 +2842,7 @@ async function loadFromDrive(){
         updateAll();
         updateOtherLogs();
         applyTabSettings();
+        updateFastingTab();
       }
     }
   }catch(e){
@@ -2320,6 +2873,7 @@ async function syncToDrive(){
       tombstones: S.tombstones,
       quickFoods: S.quickFoods,
       measurements: S.measurements,
+      fasting: S.fasting,
       lastSync: new Date().toISOString()
     });
     const resp = await driveApiFetch(
@@ -2379,6 +2933,10 @@ document.addEventListener('visibilitychange', () => {
     loadFromDrive();
   }
 });
+
 </script>
+</body>
+</html>
+
 </body>
 </html>
