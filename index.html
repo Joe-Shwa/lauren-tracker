@@ -464,24 +464,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     </div>
   </div>
 
-  <!-- LEFTOVERS -->
-  <div class="card">
-    <div class="card-title">🍽️ Log Leftovers</div>
-    <div class="info-box blue" style="margin-top:-4px">Didn't finish a plate? Photograph what's left, then either log it as its own entry or deduct it from the meal you just logged.</div>
-
-    <input type="file" id="lo-camera" accept="image/*" capture="environment" class="hidden" onchange="handleLeftoverPhoto(event)">
-    <input type="file" id="lo-gallery" accept="image/*" class="hidden" onchange="handleLeftoverPhoto(event)">
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn btn-primary" style="flex:1" onclick="document.getElementById('lo-camera').click()">📷 Take Photo</button>
-      <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('lo-gallery').click()">🖼️ From Gallery</button>
-    </div>
-    <div id="lo-preview" class="hidden">
-      <img id="lo-img" style="width:100%;border-radius:10px;max-height:180px;object-fit:cover;margin-bottom:10px">
-      <div id="lo-loading" class="hidden" style="text-align:center;padding:14px"><div class="dots"><span></span><span></span><span></span></div><div style="font-size:12px;color:var(--muted);margin-top:8px">Analysing...</div></div>
-      <div id="lo-result"></div>
-    </div>
-  </div>
-
   <!-- TEXT LOOKUP -->
   <div class="card">
     <div class="card-title">🔍 Look Up Macros</div>
@@ -1535,92 +1517,146 @@ function editLookup(){
   lookupPending=null;
 }
 // ─── PHOTO LOG ────────────────────────────────────────────────────────────────
+function phEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let lastPhotoB64=null,lastPhotoType=null,currentPhotoMeal=null;
 async function handleMealPhoto(event){
   const file=event.target.files[0];if(!file)return;
   const preview=document.getElementById('ph-preview'),img=document.getElementById('ph-img'),loading=document.getElementById('ph-loading'),result=document.getElementById('ph-result');
   const reader=new FileReader();
   reader.onload=async e=>{
     img.src=e.target.result;preview.classList.remove('hidden');loading.classList.remove('hidden');result.innerHTML='';
-    try{
-      const b64=e.target.result.split(',')[1];
-      const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
-        body:JSON.stringify({
-          model:'claude-sonnet-4-6',max_tokens:400,
-          messages:[{role:'user',content:[
-            {type:'image',source:{type:'base64',media_type:file.type,data:b64}},
-            {type:'text',text:'Analyse this meal photo for an adult female. Cooked weight assumed. Return ONLY valid JSON: {"name":"meal description","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).'}
-          ]}]
-        })
-      });
-      const data=await resp.json();
-      if(data.error){throw new Error(data.error.message);}
-      const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
-      const clean=text.replace(/```json\n?|```/g,'').trim();
-      const meal=JSON.parse(clean);
-      meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
-      loading.classList.add('hidden');
-      result.innerHTML=`<div style="padding:8px 0"><div style="font-size:14px;font-weight:700;margin-bottom:6px">${meal.emoji} ${meal.name}</div><div style="margin-bottom:6px"><span class="tag">🔥 ${meal.cal} cal</span><span class="tag" style="background:#ECFDF5;color:#10B981">💪 ${meal.pro}g protein</span><span class="tag" style="background:#FFFBEB;color:#F59E0B">🥑 ${meal.fat}g fat</span><span class="tag" style="background:#EFF6FF;color:#3B82F6">🍝 ${meal.carb}g carbs</span></div>${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given your anaphylactic soy allergy.</div>':''}<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${meal.note}</div><button class="btn btn-primary btn-sm" style="width:auto;margin-right:8px" onclick='logPhotoMeal(${JSON.stringify(meal)})'>Add to today ✓</button><button class="btn btn-secondary btn-sm" style="width:auto;margin-right:8px" onclick='saveAsQuickFood(${JSON.stringify(meal)})'>⭐ Quick Add</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden')">Cancel</button></div>`;
-    }catch(e){
-      loading.classList.add('hidden');
+    lastPhotoB64=e.target.result.split(',')[1];lastPhotoType=file.type;currentPhotoMeal=null;
+    const prompt='Analyse this meal photo for an adult female. Cooked weight assumed. Return ONLY valid JSON: {"name":"meal description","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).';
+    await analysePhotoAndRender(prompt,loading,result);
+  };
+  reader.readAsDataURL(file);event.target.value='';
+}
+async function analysePhotoAndRender(promptText,loading,result){
+  try{
+    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',max_tokens:400,
+        messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:lastPhotoType,data:lastPhotoB64}},
+          {type:'text',text:promptText}
+        ]}]
+      })
+    });
+    const data=await resp.json();
+    if(data.error){throw new Error(data.error.message);}
+    const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
+    const clean=text.replace(/```json\n?|```/g,'').trim();
+    const meal=JSON.parse(clean);
+    meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
+    currentPhotoMeal=meal;
+    loading.classList.add('hidden');
+    renderPhotoResult(meal);
+  }catch(e){
+    loading.classList.add('hidden');
+    if(currentPhotoMeal){
+      const err=document.getElementById('ph-rescan-error');
+      if(err)err.textContent="Couldn't re-analyse this photo — your fields above are unchanged. Try Re-scan again, or edit the fields manually.";
+    }else{
       result.innerHTML=`<div style="color:var(--muted);font-size:13px;padding:8px 0">
         <p style="margin-bottom:8px">Couldn't analyse this photo. Try the <strong>Look Up Macros</strong> section instead — type what's on your plate and it'll estimate from the description.</p>
         <button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden');showTab('log',document.querySelectorAll('.nav-tab')[1])">Use text lookup →</button>
       </div>`;
     }
-  };
-  reader.readAsDataURL(file);event.target.value='';
+  }
 }
-function logPhotoMeal(m){addMeal(m);document.getElementById('ph-preview').classList.add('hidden');}
+function renderPhotoResult(meal){
+  const result=document.getElementById('ph-result');
+  result.innerHTML=`<div style="padding:8px 0">
+    <div class="form-group"><div class="input-label">Food (edit if the AI got it wrong)</div><input class="input-field" id="ph-name" value="${phEsc(meal.name)}"></div>
+    <div class="macro-fields" id="ph-macro-fields">
+      <div class="macro-field-wrap"><div class="input-label">Cal</div><input class="input-field" id="ph-cal" type="number" value="${meal.cal}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Protein g</div><input class="input-field" id="ph-pro" type="number" value="${meal.pro}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Fat g</div><input class="input-field" id="ph-fat" type="number" value="${meal.fat}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Carbs g</div><input class="input-field" id="ph-carb" type="number" value="${meal.carb}"></div>
+    </div>
+    ${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given your anaphylactic soy allergy.</div>':''}
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${phEsc(meal.note||'')}</div>
+    <div id="ph-rescan-error" style="font-size:12px;color:#EF4444;margin-bottom:6px"></div>
+    <div id="ph-action-row" style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" style="width:auto" onclick="logPhotoMealFromFields()">Add to today ✓</button>
+      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="saveAsQuickFood(getPhotoFieldsAsMeal())">⭐ Quick Add</button>
+      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="showLeftoverOptions()">🥡 Leftovers</button>
+      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="rescanMealPhoto()">🔄 Re-scan</button>
+      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden')">Cancel</button>
+    </div>
+    <div id="ph-leftover-row" class="hidden" style="margin-top:4px">
+      <div id="ph-leftover-note" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" style="width:auto" onclick="logLeftoversSeparately()">➕ Log separately</button>
+        <button class="btn btn-secondary btn-sm" id="ph-deduct-btn" style="width:auto" onclick="deductLeftoversFromLastMeal()">➖ Deduct from last meal</button>
+        <button class="btn btn-secondary btn-sm" style="width:auto" onclick="hideLeftoverOptions()">‹ Back</button>
+      </div>
+    </div>
+  </div>`;
+}
+// Switches the photo-result view from the normal meal actions to the leftovers choice — used when
+// this was actually food left on a plate rather than a new meal (see showLeftoverOptions below).
+function hideLeftoverOptions(){
+  document.getElementById('ph-leftover-row').classList.add('hidden');
+  document.getElementById('ph-action-row').classList.remove('hidden');
+}
+// Shows the "log separately vs deduct from last meal" choice for the currently-analysed photo —
+// reached by tapping 🥡 Leftovers on a normal Photo Log result, once you notice this was actually
+// leftovers rather than a new meal. Reuses the same photo/macro estimate already on screen instead
+// of running a second AI analysis pass.
+function showLeftoverOptions(){
+  const target=lastLoggableMealForDate(viewDateStr());
+  const note=document.getElementById('ph-leftover-note');
+  const deductBtn=document.getElementById('ph-deduct-btn');
+  if(target){
+    note.innerHTML='Deducting will subtract from: <strong>'+phEsc(target.name)+'</strong>'+(target.time?' ('+target.time+')':'');
+    deductBtn.disabled=false;
+  } else {
+    note.textContent='No meal logged yet today to deduct from — you can still log this as its own leftovers entry.';
+    deductBtn.disabled=true;
+  }
+  document.getElementById('ph-action-row').classList.add('hidden');
+  document.getElementById('ph-leftover-row').classList.remove('hidden');
+}
+// Coerces to numbers here (unlike Josh's tracker) because Lauren's addMeal() does not coerce
+// numeric fields itself — matches the same-typed pattern her addManual() already uses.
+function getPhotoFieldsAsMeal(){
+  return {
+    name:document.getElementById('ph-name').value,
+    cal:+document.getElementById('ph-cal').value||0,
+    pro:+document.getElementById('ph-pro').value||0,
+    fat:+document.getElementById('ph-fat').value||0,
+    carb:+document.getElementById('ph-carb').value||0,
+    emoji:(currentPhotoMeal&&currentPhotoMeal.emoji)||'🍽️'
+  };
+}
+function logPhotoMealFromFields(){
+  addMeal(getPhotoFieldsAsMeal());
+  document.getElementById('ph-preview').classList.add('hidden');
+}
+async function rescanMealPhoto(){
+  if(!lastPhotoB64)return;
+  const nameInput=document.getElementById('ph-name');
+  const correctedName=nameInput?nameInput.value.trim():'';
+  const loading=document.getElementById('ph-loading'),result=document.getElementById('ph-result');
+  const errEl=document.getElementById('ph-rescan-error');if(errEl)errEl.textContent='';
+  loading.classList.remove('hidden');
+  const prompt=`Analyse this meal photo again, for an adult female. The user has told you the correct food identification is: "${correctedName}" — trust that identification over your first guess, but keep reassessing the portion size and macros directly from what you see in the photo (cooked weight assumed). Return ONLY valid JSON: {"name":"...","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).`;
+  await analysePhotoAndRender(prompt,loading,result);
+}
 
 // ─── LEFTOVERS ──────────────────────────────────────────────────────────────
-// Photograph what's left on the plate after a meal. Reuses the same Worker/photo-analysis call
-// as the main Photo Log, but keeps its own state so a leftovers scan can never clobber an
-// in-progress meal-photo scan. The result offers two choices: log the leftovers as their own
-// entry, or deduct them from the meal just logged — as a visible second "Leftovers removed" line,
-// not a silent edit to the original entry. Soy risk is checked the same way as her other photo/
-// lookup features, since a leftover plate can just as easily contain a soy risk as a fresh one.
-function phEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-let lastLeftoverB64=null,lastLeftoverType=null,currentLeftoverMeal=null;
-function handleLeftoverPhoto(event){
-  const file=event.target.files[0];if(!file)return;
-  const preview=document.getElementById('lo-preview'),img=document.getElementById('lo-img'),loading=document.getElementById('lo-loading'),result=document.getElementById('lo-result');
-  const reader=new FileReader();
-  reader.onload=async e=>{
-    img.src=e.target.result;preview.classList.remove('hidden');loading.classList.remove('hidden');result.innerHTML='';
-    lastLeftoverB64=e.target.result.split(',')[1];lastLeftoverType=file.type;currentLeftoverMeal=null;
-    const prompt='Analyse this photo of LEFTOVER food remaining on a plate, for an adult female — estimate the macros of only what is still visible/uneaten, not a full serving. Cooked weight assumed. Return ONLY valid JSON: {"name":"short description of the leftover food","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the food clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).';
-    try{
-      const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
-        body:JSON.stringify({
-          model:'claude-sonnet-4-6',max_tokens:400,
-          messages:[{role:'user',content:[
-            {type:'image',source:{type:'base64',media_type:lastLeftoverType,data:lastLeftoverB64}},
-            {type:'text',text:prompt}
-          ]}]
-        })
-      });
-      const data=await resp.json();
-      if(data.error){throw new Error(data.error.message);}
-      const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
-      const clean=text.replace(/```json\n?|```/g,'').trim();
-      const meal=JSON.parse(clean);
-      meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
-      currentLeftoverMeal=meal;
-      loading.classList.add('hidden');
-      renderLeftoverResult(meal);
-    }catch(err){
-      loading.classList.add('hidden');
-      result.innerHTML=`<div style="color:var(--muted);font-size:13px;padding:8px 0">Couldn't analyse this photo. Try again with better light, or skip leftovers tracking for this meal.
-        <div style="margin-top:8px"><button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('lo-preview').classList.add('hidden')">Cancel</button></div>
-      </div>`;
-    }
-  };
-  reader.readAsDataURL(file);event.target.value='';
-}
+// Rolled into the Photo Log above — there used to be a second, separate camera/gallery card just
+// for leftovers, but the two "Take Photo" buttons sitting right on top of each other kept getting
+// tapped by accident. Now there's one photo button, and the leftovers path starts from the normal
+// Photo Log result: tap 🥡 Leftovers (see showLeftoverOptions() above) to get the log-separately /
+// deduct-from-last-meal choice below, using the macro estimate already on screen — no second AI
+// analysis pass, so no second camera button to mis-tap. The deduction still shows up as a visible
+// second "Leftovers removed" line, not a silent edit to the original entry. Soy risk is checked the
+// same way as her other photo/lookup features, since a leftover plate can just as easily contain a
+// soy risk as a fresh one.
 // Picks the most recently logged real meal for the date being viewed — the thing a leftovers photo
 // almost always belongs to. Deduction entries are excluded so "deduct from last meal" can never
 // target an earlier deduction line.
@@ -1629,47 +1665,14 @@ function lastLoggableMealForDate(dateStr){
   if(!meals.length)return null;
   return meals.reduce((a,b)=>(b.updatedAt||0)>(a.updatedAt||0)?b:a);
 }
-function renderLeftoverResult(meal){
-  const result=document.getElementById('lo-result');
-  const target=lastLoggableMealForDate(viewDateStr());
-  result.innerHTML=`<div style="padding:8px 0">
-    <div class="form-group"><div class="input-label">Food (edit if the AI got it wrong)</div><input class="input-field" id="lo-name" value="${phEsc(meal.name)}"></div>
-    <div class="macro-fields" id="lo-macro-fields">
-      <div class="macro-field-wrap"><div class="input-label">Cal</div><input class="input-field" id="lo-cal" type="number" value="${meal.cal}"></div>
-      <div class="macro-field-wrap"><div class="input-label">Protein g</div><input class="input-field" id="lo-pro" type="number" value="${meal.pro}"></div>
-      <div class="macro-field-wrap"><div class="input-label">Fat g</div><input class="input-field" id="lo-fat" type="number" value="${meal.fat}"></div>
-      <div class="macro-field-wrap"><div class="input-label">Carbs g</div><input class="input-field" id="lo-carb" type="number" value="${meal.carb}"></div>
-    </div>
-    ${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given your anaphylactic soy allergy.</div>':''}
-    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${phEsc(meal.note||'')}</div>
-    ${target?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Deducting will subtract from: <strong>${phEsc(target.name)}</strong>${target.time?' ('+target.time+')':''}</div>`:`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">No meal logged yet today to deduct from — you can still log the leftovers as their own entry.</div>`}
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" style="width:auto" onclick="logLeftoversSeparately()">➕ Log separately</button>
-      <button class="btn btn-secondary btn-sm" style="width:auto" ${target?'':'disabled'} onclick="deductLeftoversFromLastMeal()">➖ Deduct from last meal</button>
-      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('lo-preview').classList.add('hidden')">Cancel</button>
-    </div>
-  </div>`;
-}
-// Coerces to numbers here (unlike getPhotoFieldsAsMeal on Josh's tracker) because Lauren's addMeal()
-// does not coerce numeric fields itself — matches the same-typed pattern her addManual() already uses.
-function getLeftoverFieldsAsMeal(){
-  return {
-    name:document.getElementById('lo-name').value,
-    cal:+document.getElementById('lo-cal').value||0,
-    pro:+document.getElementById('lo-pro').value||0,
-    fat:+document.getElementById('lo-fat').value||0,
-    carb:+document.getElementById('lo-carb').value||0,
-    emoji:(currentLeftoverMeal&&currentLeftoverMeal.emoji)||'🍽️'
-  };
-}
 function logLeftoversSeparately(){
-  addMeal(getLeftoverFieldsAsMeal());
-  document.getElementById('lo-preview').classList.add('hidden');
+  addMeal(getPhotoFieldsAsMeal());
+  document.getElementById('ph-preview').classList.add('hidden');
 }
 function deductLeftoversFromLastMeal(){
   const target=lastLoggableMealForDate(viewDateStr());
   if(!target)return;
-  const vals=getLeftoverFieldsAsMeal();
+  const vals=getPhotoFieldsAsMeal();
   // Clamp the deduction's magnitude to the target meal's own values, so subtracting can never push
   // the day's totals negative — if the AI overestimates the leftover, it just zeroes that meal out.
   const clamp=(v,max)=>Math.min(Math.abs(+v||0),Math.abs(+max||0));
@@ -1681,7 +1684,7 @@ function deductLeftoversFromLastMeal(){
     isDeduction:true,
     deductedFrom:target.id
   });
-  document.getElementById('lo-preview').classList.add('hidden');
+  document.getElementById('ph-preview').classList.add('hidden');
 }
 
 // ─── WEIGHT ───────────────────────────────────────────────────────────────────
