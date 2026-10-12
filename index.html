@@ -317,6 +317,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <p style="margin-bottom:14px">Today, Log, and Move are always on. Turn the others on or off to keep things simple — nothing gets deleted, just hidden.</p>
     <div id="settings-tab-list"></div>
 
+    <div class="settings-section-title">Weight Goals</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Baseline is your original weigh-in — used for "since baseline" and progress. Goal is the weight your calorie/protein targets are calculated for. Ported from josh_tracker_v34.html — previously these could only ever be set once, at initial setup, with no way to correct them afterward.</p>
+    <div class="input-row">
+      <div style="flex:1"><div class="input-label">Baseline (kg)</div><input class="input-field" id="pf-baseline" type="number" step="0.1"></div>
+      <div style="flex:1"><div class="input-label">Goal (kg)</div><input class="input-field" id="pf-goal" type="number" step="0.1"></div>
+    </div>
+
     <div class="settings-section-title">Training Level</div>
     <p style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Adjusts your protein target. Calories, fat and carbs are unaffected unless you set a custom target below.</p>
     <select class="input-field" id="pf-training">
@@ -449,7 +456,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <!-- PHOTO LOG -->
   <div class="card">
     <div class="card-title">📸 Photo Log</div>
-    <div class="info-box blue" style="margin-top:-4px">Best for single items or simple plates in good light. Complex multi-item plates — use text lookup instead.</div>
+    <div class="info-box blue" style="margin-top:-4px">Best for single items or simple plates in good light. Complex multi-item plates — use text lookup instead. Leftover on a plate? Snap it here too, then tap 🥡 Leftovers on the result to log it separately or deduct it from your last meal.</div>
 
     <input type="file" id="ph-camera" accept="image/*" capture="environment" class="hidden" onchange="handleMealPhoto(event)">
     <input type="file" id="ph-gallery" accept="image/*" class="hidden" onchange="handleMealPhoto(event)">
@@ -486,6 +493,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <!-- MANUAL ENTRY -->
   <div class="card">
     <div class="card-title">✏️ Manual Entry</div>
+    <div class="hidden" id="m-edit-banner" style="font-size:12px;padding:8px 10px;border-radius:8px;margin-bottom:10px;line-height:1.5"></div>
     <div class="form-group">
       <div class="input-label">Food name</div>
       <input class="input-field" id="m-food" placeholder="e.g. Steak 180g + 3 boiled eggs">
@@ -1148,7 +1156,7 @@ const OPTIONAL_TABS=[
 ];
 function openSettings(){
   renderSettingsPanel();
-  // Populate training level + override fields from the current profile
+  // Populate training level + override fields + Baseline/Goal from the current profile
   if(S.profile){
     const trainEl=document.getElementById('pf-training');
     if(trainEl)trainEl.value=S.profile.trainingLevel||'recreational';
@@ -1158,6 +1166,8 @@ function openSettings(){
     setOv('pf-ov-protein',ov.protein);
     setOv('pf-ov-fat',ov.fat);
     setOv('pf-ov-carb',ov.carb);
+    setOv('pf-baseline',S.profile.current);
+    setOv('pf-goal',S.profile.goal);
   }
   const smEl=document.getElementById('pf-streak-mode');
   if(smEl)smEl.value=(S.settings&&S.settings.streakMode)||'balanced';
@@ -1174,6 +1184,12 @@ function closeSettings(){
       fat:readOv('pf-ov-fat'),
       carb:readOv('pf-ov-carb')
     };
+    // Baseline/Goal — blank keeps whatever's already stored rather than wiping it to 0. Ported
+    // from josh_tracker_v34.html: previously there was no way to correct either after setup.
+    const baselineEl=document.getElementById('pf-baseline');
+    if(baselineEl && baselineEl.value!=='') S.profile.current=+baselineEl.value;
+    const goalEl=document.getElementById('pf-goal');
+    if(goalEl && goalEl.value!=='') S.profile.goal=+goalEl.value;
     const final=computeFinalMacros(S.profile,S.profile.overrides);
     S.profile.cals=final.cals;
     S.profile.protein=final.protein;
@@ -1314,11 +1330,16 @@ function updateMealsList(){
   const el=document.getElementById('meals-list');
   const meals=mealsForDate(viewDateStr());
   if(!meals.length){el.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">No meals logged yet.</div>';return;}
-  // Deduction lines (from the Leftovers feature) get a dashed/tinted style so they read as an
-  // adjustment rather than a separate food item, without needing a whole new CSS class.
+  // Deduction lines (from the Leftovers feature) get a dashed amber style so they read as an
+  // adjustment rather than a separate food item. Leftovers logged *separately* (still a normal
+  // addition to the day's totals — see logLeftoversSeparately()) get a lighter blue-tinted dashed
+  // style plus a small "LEFTOVER" tag — ported from josh_tracker_v36.html, since previously both
+  // looked identical to a plain meal here.
   el.innerHTML=meals.map(m=>{
     const dedStyle=m.isDeduction?' style="border:1px dashed var(--border);background:var(--amber-pale)"':'';
-    return `<div class="meal-item"${dedStyle}><div class="meal-emoji">${m.emoji||'🍽️'}</div><div class="meal-info"><div class="meal-name">${m.name}</div><div class="meal-macros">${m.cal} cal · ${m.pro}g protein · ${m.fat}g fat · ${m.carb}g carbs</div></div><span class="meal-del" style="font-size:17px" onclick="editMeal('${m.id}')" title="Edit">✎</span><div class="meal-del" onclick="delMeal('${m.id}')" title="Delete">×</div></div>`;
+    const leftoverStyle=(!m.isDeduction&&m.isLeftover)?' style="border:1px dashed var(--border);background:var(--blue-pale)"':'';
+    const leftoverTag=(!m.isDeduction&&m.isLeftover)?' <span style="font-size:10px;font-weight:700;color:var(--blue);background:#fff;border-radius:5px;padding:1px 5px;margin-left:4px">🥡 LEFTOVER</span>':'';
+    return `<div class="meal-item"${dedStyle||leftoverStyle}><div class="meal-emoji">${m.emoji||'🍽️'}</div><div class="meal-info"><div class="meal-name">${m.name}${leftoverTag}</div><div class="meal-macros">${m.cal} cal · ${m.pro}g protein · ${m.fat}g fat · ${m.carb}g carbs</div></div><span class="meal-del" style="font-size:17px" onclick="editMeal('${m.id}')" title="Edit">✎</span><div class="meal-del" onclick="delMeal('${m.id}')" title="Delete">×</div></div>`;
   }).join('');
 }
 function delMeal(id){if(mealEditId===id)cancelMealEdit();S.meals=S.meals.filter(m=>m.id!==id);markDeleted('meal',id);saveLocal();updateAll();}
@@ -1328,7 +1349,16 @@ function addManual(){
   const vals={name,cal:+document.getElementById('m-cal').value||0,pro:+document.getElementById('m-pro').value||0,fat:+document.getElementById('m-fat').value||0,carb:+document.getElementById('m-carb').value||0};
   if(mealEditId){
     const idx=S.meals.findIndex(m=>m.id===mealEditId);
-    if(idx>-1){S.meals[idx]={...S.meals[idx],...vals,updatedAt:Date.now()};} // date/id/time untouched — editing doesn't move the entry to a different day
+    if(idx>-1){
+      const existing=S.meals[idx];
+      // Deduction entries (Leftovers → "Deduct from last meal") are edited as positive "amount
+      // removed" values — see editMeal() — so flip the sign back to negative on save. Ported from
+      // josh_tracker_v36.html: without this, saving an edited deduction would silently turn it
+      // into an addition instead of a subtraction.
+      const sign=existing.isDeduction?-1:1;
+      const saved={...vals,cal:vals.cal*sign,pro:vals.pro*sign,fat:vals.fat*sign,carb:vals.carb*sign};
+      S.meals[idx]={...existing,...saved,updatedAt:Date.now()}; // date/id/time/isDeduction/isLeftover untouched
+    }
     saveLocal();updateAll();
     cancelMealEdit();
   } else {
@@ -1340,10 +1370,26 @@ function editMeal(id){
   const m=S.meals.find(x=>x.id===id);if(!m)return;
   mealEditId=id;
   document.getElementById('m-food').value=m.name;
-  document.getElementById('m-cal').value=m.cal;
-  document.getElementById('m-pro').value=m.pro;
-  document.getElementById('m-fat').value=m.fat;
-  document.getElementById('m-carb').value=m.carb;
+  // Deduction entries are stored as NEGATIVE numbers. Show the positive amount being removed
+  // instead of e.g. "-150" — editing then re-flips the sign on save (see addManual()). Ported
+  // from josh_tracker_v36.html.
+  const sign=m.isDeduction?-1:1;
+  document.getElementById('m-cal').value=m.cal*sign;
+  document.getElementById('m-pro').value=m.pro*sign;
+  document.getElementById('m-fat').value=m.fat*sign;
+  document.getElementById('m-carb').value=m.carb*sign;
+  const banner=document.getElementById('m-edit-banner');
+  if(m.isDeduction){
+    banner.style.background='var(--amber-pale)';banner.style.borderLeft='3px solid var(--amber)';banner.style.color='var(--dark)';
+    banner.textContent="➖ Editing a Leftovers deduction. The numbers below are the amount being removed from today's totals — enter them as positive, they'll stay subtracted when you save.";
+    banner.classList.remove('hidden');
+  } else if(m.isLeftover){
+    banner.style.background='var(--blue-pale)';banner.style.borderLeft='3px solid var(--blue)';banner.style.color='var(--dark)';
+    banner.textContent='🥡 Editing a Leftovers entry logged separately — it still adds to today\'s totals like any other meal.';
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
   document.getElementById('m-save-btn').textContent='Update meal';
   document.getElementById('m-cancel-btn').classList.remove('hidden');
   showTab('log',document.querySelector('.nav-tab[onclick*="\'log\'"]'));
@@ -1353,6 +1399,7 @@ function cancelMealEdit(){
   mealEditId=null;
   document.getElementById('m-save-btn').textContent='Add to today';
   document.getElementById('m-cancel-btn').classList.add('hidden');
+  const banner=document.getElementById('m-edit-banner');if(banner)banner.classList.add('hidden');
   ['m-food','m-cal','m-pro','m-fat','m-carb'].forEach(id=>document.getElementById(id).value='');
 }
 // Quick Add is now a personal, editable list (S.quickFoods) — items are looked up by id, not
@@ -1517,146 +1564,91 @@ function editLookup(){
   lookupPending=null;
 }
 // ─── PHOTO LOG ────────────────────────────────────────────────────────────────
-function phEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-let lastPhotoB64=null,lastPhotoType=null,currentPhotoMeal=null;
 async function handleMealPhoto(event){
   const file=event.target.files[0];if(!file)return;
   const preview=document.getElementById('ph-preview'),img=document.getElementById('ph-img'),loading=document.getElementById('ph-loading'),result=document.getElementById('ph-result');
   const reader=new FileReader();
   reader.onload=async e=>{
     img.src=e.target.result;preview.classList.remove('hidden');loading.classList.remove('hidden');result.innerHTML='';
-    lastPhotoB64=e.target.result.split(',')[1];lastPhotoType=file.type;currentPhotoMeal=null;
-    const prompt='Analyse this meal photo for an adult female. Cooked weight assumed. Return ONLY valid JSON: {"name":"meal description","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).';
-    await analysePhotoAndRender(prompt,loading,result);
-  };
-  reader.readAsDataURL(file);event.target.value='';
-}
-async function analysePhotoAndRender(promptText,loading,result){
-  try{
-    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-6',max_tokens:400,
-        messages:[{role:'user',content:[
-          {type:'image',source:{type:'base64',media_type:lastPhotoType,data:lastPhotoB64}},
-          {type:'text',text:promptText}
-        ]}]
-      })
-    });
-    const data=await resp.json();
-    if(data.error){throw new Error(data.error.message);}
-    const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
-    const clean=text.replace(/```json\n?|```/g,'').trim();
-    const meal=JSON.parse(clean);
-    meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
-    currentPhotoMeal=meal;
-    loading.classList.add('hidden');
-    renderPhotoResult(meal);
-  }catch(e){
-    loading.classList.add('hidden');
-    if(currentPhotoMeal){
-      const err=document.getElementById('ph-rescan-error');
-      if(err)err.textContent="Couldn't re-analyse this photo — your fields above are unchanged. Try Re-scan again, or edit the fields manually.";
-    }else{
+    currentPhotoMeal=null; // reset so a Leftovers button from a previous photo can't act on stale data
+    try{
+      const b64=e.target.result.split(',')[1];
+      const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-6',max_tokens:400,
+          messages:[{role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:file.type,data:b64}},
+            {type:'text',text:'Analyse this meal photo for an adult female. Cooked weight assumed. Return ONLY valid JSON: {"name":"meal description","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).'}
+          ]}]
+        })
+      });
+      const data=await resp.json();
+      if(data.error){throw new Error(data.error.message);}
+      const text=data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
+      const clean=text.replace(/```json\n?|```/g,'').trim();
+      const meal=JSON.parse(clean);
+      meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
+      currentPhotoMeal=meal; // lets showLeftoverOptions() below reuse this estimate without a second AI call
+      loading.classList.add('hidden');
+      result.innerHTML=`<div style="padding:8px 0"><div style="font-size:14px;font-weight:700;margin-bottom:6px">${meal.emoji} ${meal.name}</div><div style="margin-bottom:6px"><span class="tag">🔥 ${meal.cal} cal</span><span class="tag" style="background:#ECFDF5;color:#10B981">💪 ${meal.pro}g protein</span><span class="tag" style="background:#FFFBEB;color:#F59E0B">🥑 ${meal.fat}g fat</span><span class="tag" style="background:#EFF6FF;color:#3B82F6">🍝 ${meal.carb}g carbs</span></div>${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given your anaphylactic soy allergy.</div>':''}<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${meal.note}</div><div id="ph-action-row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" style="width:auto" onclick='logPhotoMeal(${JSON.stringify(meal)})'>Add to today ✓</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick='saveAsQuickFood(${JSON.stringify(meal)})'>⭐ Quick Add</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick="showLeftoverOptions()">🥡 Leftovers</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden')">Cancel</button></div><div id="ph-leftover-row" class="hidden" style="margin-top:8px"></div></div>`;
+    }catch(e){
+      loading.classList.add('hidden');
       result.innerHTML=`<div style="color:var(--muted);font-size:13px;padding:8px 0">
         <p style="margin-bottom:8px">Couldn't analyse this photo. Try the <strong>Look Up Macros</strong> section instead — type what's on your plate and it'll estimate from the description.</p>
         <button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden');showTab('log',document.querySelectorAll('.nav-tab')[1])">Use text lookup →</button>
       </div>`;
     }
-  }
-}
-function renderPhotoResult(meal){
-  const result=document.getElementById('ph-result');
-  result.innerHTML=`<div style="padding:8px 0">
-    <div class="form-group"><div class="input-label">Food (edit if the AI got it wrong)</div><input class="input-field" id="ph-name" value="${phEsc(meal.name)}"></div>
-    <div class="macro-fields" id="ph-macro-fields">
-      <div class="macro-field-wrap"><div class="input-label">Cal</div><input class="input-field" id="ph-cal" type="number" value="${meal.cal}"></div>
-      <div class="macro-field-wrap"><div class="input-label">Protein g</div><input class="input-field" id="ph-pro" type="number" value="${meal.pro}"></div>
-      <div class="macro-field-wrap"><div class="input-label">Fat g</div><input class="input-field" id="ph-fat" type="number" value="${meal.fat}"></div>
-      <div class="macro-field-wrap"><div class="input-label">Carbs g</div><input class="input-field" id="ph-carb" type="number" value="${meal.carb}"></div>
-    </div>
-    ${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given your anaphylactic soy allergy.</div>':''}
-    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${phEsc(meal.note||'')}</div>
-    <div id="ph-rescan-error" style="font-size:12px;color:#EF4444;margin-bottom:6px"></div>
-    <div id="ph-action-row" style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" style="width:auto" onclick="logPhotoMealFromFields()">Add to today ✓</button>
-      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="saveAsQuickFood(getPhotoFieldsAsMeal())">⭐ Quick Add</button>
-      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="showLeftoverOptions()">🥡 Leftovers</button>
-      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="rescanMealPhoto()">🔄 Re-scan</button>
-      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden')">Cancel</button>
-    </div>
-    <div id="ph-leftover-row" class="hidden" style="margin-top:4px">
-      <div id="ph-leftover-note" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" style="width:auto" onclick="logLeftoversSeparately()">➕ Log separately</button>
-        <button class="btn btn-secondary btn-sm" id="ph-deduct-btn" style="width:auto" onclick="deductLeftoversFromLastMeal()">➖ Deduct from last meal</button>
-        <button class="btn btn-secondary btn-sm" style="width:auto" onclick="hideLeftoverOptions()">‹ Back</button>
-      </div>
-    </div>
-  </div>`;
-}
-// Switches the photo-result view from the normal meal actions to the leftovers choice — used when
-// this was actually food left on a plate rather than a new meal (see showLeftoverOptions below).
-function hideLeftoverOptions(){
-  document.getElementById('ph-leftover-row').classList.add('hidden');
-  document.getElementById('ph-action-row').classList.remove('hidden');
-}
-// Shows the "log separately vs deduct from last meal" choice for the currently-analysed photo —
-// reached by tapping 🥡 Leftovers on a normal Photo Log result, once you notice this was actually
-// leftovers rather than a new meal. Reuses the same photo/macro estimate already on screen instead
-// of running a second AI analysis pass.
-function showLeftoverOptions(){
-  const target=lastLoggableMealForDate(viewDateStr());
-  const note=document.getElementById('ph-leftover-note');
-  const deductBtn=document.getElementById('ph-deduct-btn');
-  if(target){
-    note.innerHTML='Deducting will subtract from: <strong>'+phEsc(target.name)+'</strong>'+(target.time?' ('+target.time+')':'');
-    deductBtn.disabled=false;
-  } else {
-    note.textContent='No meal logged yet today to deduct from — you can still log this as its own leftovers entry.';
-    deductBtn.disabled=true;
-  }
-  document.getElementById('ph-action-row').classList.add('hidden');
-  document.getElementById('ph-leftover-row').classList.remove('hidden');
-}
-// Coerces to numbers here (unlike Josh's tracker) because Lauren's addMeal() does not coerce
-// numeric fields itself — matches the same-typed pattern her addManual() already uses.
-function getPhotoFieldsAsMeal(){
-  return {
-    name:document.getElementById('ph-name').value,
-    cal:+document.getElementById('ph-cal').value||0,
-    pro:+document.getElementById('ph-pro').value||0,
-    fat:+document.getElementById('ph-fat').value||0,
-    carb:+document.getElementById('ph-carb').value||0,
-    emoji:(currentPhotoMeal&&currentPhotoMeal.emoji)||'🍽️'
   };
+  reader.readAsDataURL(file);event.target.value='';
 }
-function logPhotoMealFromFields(){
-  addMeal(getPhotoFieldsAsMeal());
-  document.getElementById('ph-preview').classList.add('hidden');
-}
-async function rescanMealPhoto(){
-  if(!lastPhotoB64)return;
-  const nameInput=document.getElementById('ph-name');
-  const correctedName=nameInput?nameInput.value.trim():'';
-  const loading=document.getElementById('ph-loading'),result=document.getElementById('ph-result');
-  const errEl=document.getElementById('ph-rescan-error');if(errEl)errEl.textContent='';
-  loading.classList.remove('hidden');
-  const prompt=`Analyse this meal photo again, for an adult female. The user has told you the correct food identification is: "${correctedName}" — trust that identification over your first guess, but keep reassessing the portion size and macros directly from what you see in the photo (cooked weight assumed). Return ONLY valid JSON: {"name":"...","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).`;
-  await analysePhotoAndRender(prompt,loading,result);
-}
+function logPhotoMeal(m){addMeal(m);document.getElementById('ph-preview').classList.add('hidden');}
 
 // ─── LEFTOVERS ──────────────────────────────────────────────────────────────
 // Rolled into the Photo Log above — there used to be a second, separate camera/gallery card just
 // for leftovers, but the two "Take Photo" buttons sitting right on top of each other kept getting
-// tapped by accident. Now there's one photo button, and the leftovers path starts from the normal
-// Photo Log result: tap 🥡 Leftovers (see showLeftoverOptions() above) to get the log-separately /
-// deduct-from-last-meal choice below, using the macro estimate already on screen — no second AI
-// analysis pass, so no second camera button to mis-tap. The deduction still shows up as a visible
-// second "Leftovers removed" line, not a silent edit to the original entry. Soy risk is checked the
-// same way as her other photo/lookup features, since a leftover plate can just as easily contain a
-// soy risk as a fresh one.
+// tapped by accident (same issue the other trackers hit). Now there's one photo button, and the
+// leftovers path starts from the normal Photo Log result: tap 🥡 Leftovers (see
+// showLeftoverOptions() below) to get an editable estimate plus the log-separately /
+// deduct-from-last-meal choice, using the macro estimate already on screen (currentPhotoMeal) —
+// no second AI analysis pass, so no second camera button to mis-tap. The deduction still shows up
+// as a visible second "Leftovers removed" line, not a silent edit to the original entry. Soy risk
+// is checked the same way as her other photo/lookup features either way.
+function phEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let currentPhotoMeal=null;
+// Shows the "log separately vs deduct from last meal" editable form for the currently-analysed
+// Photo Log result — reached by tapping 🥡 Leftovers once you notice a photo was actually
+// leftovers rather than a new meal.
+function showLeftoverOptions(){
+  const meal=currentPhotoMeal;if(!meal)return;
+  const target=lastLoggableMealForDate(viewDateStr());
+  const row=document.getElementById('ph-leftover-row');
+  row.innerHTML=`<div style="padding:8px 0">
+    <div class="form-group"><div class="input-label">Food (edit if the AI got it wrong)</div><input class="input-field" id="lo-name" value="${phEsc(meal.name)}"></div>
+    <div class="macro-fields" id="lo-macro-fields">
+      <div class="macro-field-wrap"><div class="input-label">Cal</div><input class="input-field" id="lo-cal" type="number" value="${meal.cal}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Protein g</div><input class="input-field" id="lo-pro" type="number" value="${meal.pro}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Fat g</div><input class="input-field" id="lo-fat" type="number" value="${meal.fat}"></div>
+      <div class="macro-field-wrap"><div class="input-label">Carbs g</div><input class="input-field" id="lo-carb" type="number" value="${meal.carb}"></div>
+    </div>
+    ${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given her anaphylactic soy allergy.</div>':''}
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${phEsc(meal.note||'')}</div>
+    ${target?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Deducting will subtract from: <strong>${phEsc(target.name)}</strong>${target.time?' ('+target.time+')':''}</div>`:`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">No meal logged yet today to deduct from — you can still log the leftovers as their own entry.</div>`}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" style="width:auto" onclick="logLeftoversSeparately()">➕ Log separately</button>
+      <button class="btn btn-secondary btn-sm" style="width:auto" ${target?'':'disabled'} onclick="deductLeftoversFromLastMeal()">➖ Deduct from last meal</button>
+      <button class="btn btn-secondary btn-sm" style="width:auto" onclick="hideLeftoverOptions()">‹ Back</button>
+    </div>
+  </div>`;
+  document.getElementById('ph-action-row').classList.add('hidden');
+  row.classList.remove('hidden');
+}
+function hideLeftoverOptions(){
+  document.getElementById('ph-leftover-row').classList.add('hidden');
+  const actions=document.getElementById('ph-action-row');
+  if(actions)actions.classList.remove('hidden');
+}
 // Picks the most recently logged real meal for the date being viewed — the thing a leftovers photo
 // almost always belongs to. Deduction entries are excluded so "deduct from last meal" can never
 // target an earlier deduction line.
@@ -1665,14 +1657,31 @@ function lastLoggableMealForDate(dateStr){
   if(!meals.length)return null;
   return meals.reduce((a,b)=>(b.updatedAt||0)>(a.updatedAt||0)?b:a);
 }
+// Coerces to numbers here (unlike getPhotoFieldsAsMeal on Josh's tracker) because Lauren's addMeal()
+// does not coerce numeric fields itself — matches the same-typed pattern her addManual() already uses.
+// Reads from the editable mini-form showLeftoverOptions() rendered into #ph-leftover-row.
+function getLeftoverFieldsAsMeal(){
+  return {
+    name:document.getElementById('lo-name').value,
+    cal:+document.getElementById('lo-cal').value||0,
+    pro:+document.getElementById('lo-pro').value||0,
+    fat:+document.getElementById('lo-fat').value||0,
+    carb:+document.getElementById('lo-carb').value||0,
+    emoji:(currentPhotoMeal&&currentPhotoMeal.emoji)||'🍽️'
+  };
+}
 function logLeftoversSeparately(){
-  addMeal(getPhotoFieldsAsMeal());
+  // Flagged isLeftover so the meal log can visibly distinguish this from a brand-new meal (see
+  // updateMealsList()) and so editMeal() can show the right context banner — ported from
+  // josh_tracker_v36.html. It still ADDS to today's totals like any other meal; "separately"
+  // means "its own log line", not "subtracted".
+  addMeal({...getLeftoverFieldsAsMeal(),isLeftover:true});
   document.getElementById('ph-preview').classList.add('hidden');
 }
 function deductLeftoversFromLastMeal(){
   const target=lastLoggableMealForDate(viewDateStr());
   if(!target)return;
-  const vals=getPhotoFieldsAsMeal();
+  const vals=getLeftoverFieldsAsMeal();
   // Clamp the deduction's magnitude to the target meal's own values, so subtracting can never push
   // the day's totals negative — if the AI overestimates the leftover, it just zeroes that meal out.
   const clamp=(v,max)=>Math.min(Math.abs(+v||0),Math.abs(+max||0));
@@ -2430,11 +2439,27 @@ function renderPeptides(){
 // ─── CHAT ─────────────────────────────────────────────────────────────────────
 function autoSize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px';}
 function chatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
+// Formats one measurement entry the same way Josh's/generic/trial trackers' chat summaries do —
+// ported alongside the measurementLines block below.
+function fmtMeasureEntry(e){
+  if(!e)return '';
+  return MEASURE_FIELDS.filter(f=>f.single?e[f.key]!=null:(e[f.key+'_l']!=null||e[f.key+'_r']!=null))
+    .map(f=>{
+      if(f.single)return f.label+': '+e[f.key]+'cm';
+      const l=e[f.key+'_l'],r=e[f.key+'_r'];
+      if(l!=null&&r!=null)return f.label+': L '+l+'cm / R '+r+'cm';
+      if(l!=null)return f.label+': '+l+'cm (L)';
+      return f.label+': '+r+'cm (R)';
+    }).join(' · ');
+}
 function buildSys(){
   const p=S.profile,t=getTotals();
   const suppLines=(S.supplements||[]).map(s=>`${s.name} (${s.dose})`).join(', ');
   const peptideLines=(S.peptides||[]).map(pep=>pep.dosing.type==='titration'?`${pep.name} (titrating, week ${getPeptideWeek(pep)}/${pep.dosing.schedule.length})`:`${pep.name} (${pep.dosing.doseLabel})`).join('; ');
   const fastingLine=S.fasting&&S.fasting.windowEnabled?`Daily eating window: ${S.fasting.windowHours}h starting ${S.fasting.windowStart}.`:'';
+  // Measurements weren't surfaced to the Ask assistant at all before this — it could see weight
+  // trends but not tape-measure progress. Ported from josh_tracker_v34.html.
+  const measurementLines=[...(S.measurements||[])].slice(-5).map(m=>`${m.date}: ${fmtMeasureEntry(m)}${m.notes?' ('+m.notes+')':''}`).join('; ');
   return `You are Lauren's personal wellness assistant. Lauren: female, height ${p?p.height:158}cm, current ~${S.weights.length?S.weights[S.weights.length-1].weight:(p?p.current:'unknown')}kg, goal ${p?p.goal:'unknown'}kg.
 
 CRITICAL ALLERGY: Lauren is ANAPHYLACTIC to soy protein. She has had two hospital-level reactions. She carries an EpiPen. Always flag any food or supplement that may contain soy protein, soy lecithin, or soy derivatives. Exception: fermented soy products (soy sauce, miso, tempeh) are generally tolerated as fermentation breaks down the allergenic proteins. Trace contamination ("may contain soy") has caused inconsistent reactions — treat with caution.
@@ -2444,6 +2469,7 @@ Peptides in use: ${peptideLines||'none'}.
 ${fastingLine}
 
 Today: ${t.cal} cal, ${t.pro}g protein (goal ${p?p.protein:184}g), ${t.fat}g fat, ${t.carb}g carbs, ${getWaterTotal()}ml water.
+Recent body measurements: ${measurementLines||'none logged'}.
 
 Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food, supplement, or peptide suggestion against the soy allergy before recommending it.
 
