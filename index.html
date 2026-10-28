@@ -234,7 +234,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <h2>👋 Hi Lauren</h2>
       <p>This tracker was built for you — to help you feel better, eat smarter, and understand what's going on in your body. It takes about 2 minutes to set up.</p>
       <div class="info-box" style="background:var(--red-pale);border-left:3px solid var(--red);margin-bottom:16px">
-        <strong>⚠️ Allergy on file:</strong> Anaphylactic reaction to soy protein. This tracker will flag soy risks in supplements and food automatically. Fermented soy (soy sauce, miso, tempeh) is generally tolerated.
+        <strong>⚠️ Allergy on file:</strong> Lauren has a specific reaction to the soy protein found in soy milk and soy-milk-based products. She tolerates soy sauce, tofu, edamame, soy lecithin, and other soy-containing foods/derivatives without issue — this tracker only flags soy milk or soy-milk-derived ingredients.
       </div>
       <button class="btn btn-primary" onclick="nextSetup(2)">Get started →</button>
     </div>
@@ -391,6 +391,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div style="text-align:center"><div style="font-weight:700;font-size:14px;color:var(--dark)" id="view-date-label">Today</div></div>
       <button class="icon-btn" id="view-date-next-btn" onclick="navDate(1)" title="Next day" style="width:34px;height:34px;font-size:16px;border-radius:50%;border:1.5px solid var(--border);background:var(--blue-pale);color:var(--blue);cursor:pointer">→</button>
     </div>
+  </div>
+  <div class="card">
+    <div class="card-title">📝 Notes <span id="day-note-status" style="float:right;font-weight:700;color:var(--green)"></span></div>
+    <p style="font-size:12px;color:var(--muted);margin-top:-4px">Anything worth remembering about this day. Visible to the Ask assistant.</p>
+    <textarea class="input-field" id="day-note-text" rows="3" placeholder="e.g. Felt off today, travelling, etc." style="resize:vertical;font-family:inherit"></textarea>
+    <button class="btn btn-secondary btn-sm" style="width:auto;margin-top:8px" onclick="saveDayNote()">Save note</button>
   </div>
   <div class="card">
     <div class="card-title">Status <span id="streak-count" style="float:right;font-weight:700;color:var(--amber)">🔥 0 days</span></div>
@@ -693,10 +699,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="card" style="background:var(--red-pale);border-left:3px solid var(--red)">
     <div class="card-title" style="color:var(--red)">⚠️ Allergy Reference</div>
     <div style="font-size:13px;line-height:1.7;color:var(--dark)">
-      <div style="margin-bottom:6px"><strong>Anaphylactic reaction to soy protein.</strong> Hospital-level reaction, twice confirmed.</div>
-      <div style="margin-bottom:6px">Always check supplement labels for: <strong>soy lecithin, soya, soy protein, soybean oil</strong></div>
-      <div style="margin-bottom:6px"><strong>Generally tolerated:</strong> Fermented soy — soy sauce, miso, tempeh (fermentation breaks down the allergenic proteins)</div>
-      <div><strong>Unpredictable:</strong> "May contain traces of soy" products — reactions have occurred inconsistently. Treat with caution.</div>
+      <div style="margin-bottom:6px"><strong>Reaction is specific to soy milk / soy-milk-derived protein</strong> — not soy in general.</div>
+      <div style="margin-bottom:6px">Check labels for: <strong>soy milk, soy milk powder/protein</strong></div>
+      <div><strong>Tolerated without issue:</strong> soy sauce, tofu, edamame, soy lecithin, and other soy derivatives — none of these are a concern for Lauren.</div>
     </div>
   </div>
   <div class="card">
@@ -717,7 +722,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
 <!-- PEPTIDES (not live yet — off by default in Settings) -->
 <div class="section hidden" id="tab-peptides">
-  <div class="info-box amber" style="margin-bottom:10px">⚠️ Always check any peptide against your soy allergy before starting — some carrier/filler compounds can contain soy derivatives.</div>
+  <div class="info-box amber" style="margin-bottom:10px">⚠️ Lauren's soy reaction is specific to soy milk / soy-milk-derived ingredients — check peptide carriers/fillers for soy milk specifically before starting. Other soy derivatives (e.g. soy lecithin) are fine for her.</div>
   <div id="peptide-list"></div>
   <div class="card">
     <div class="card-title">+ Add Peptide</div>
@@ -765,7 +770,8 @@ let S = {
   quickFoods: null,
   settings: {tabs:{weight:true,sleep:true,supps:true,peptides:false,ask:true}},
   tombstones: [],
-  measurements: null
+  measurements: null,
+  dayNotes: null
 };
 let chatHistory = [];
 let lookupPending = null;
@@ -844,6 +850,15 @@ function dedupeQuickFoodsByName(){
     S.quickFoods=[...byName.values()];
     return true;
   }
+  return false;
+}
+function dedupeDayNotesByDate(){
+  const byDate=new Map();
+  (S.dayNotes||[]).forEach(n=>{
+    const cur=byDate.get(n.date);
+    if(!cur || (n.updatedAt||0) > (cur.updatedAt||0)) byDate.set(n.date, n);
+  });
+  if(byDate.size < (S.dayNotes||[]).length){ S.dayNotes=[...byDate.values()]; return true; }
   return false;
 }
 function migrateArr(arr,prefix,dateField){
@@ -937,6 +952,11 @@ function migrateState(){
   if(!S.measurements)S.measurements=[];
   migrateArr(S.measurements,'ms','date');
 
+  // Daily Notes — free-text note per calendar day, one entry per day. Ported from josh_tracker_v38.html.
+  if(!S.dayNotes)S.dayNotes=[];
+  migrateArr(S.dayNotes,'daynote','date');
+  dedupeDayNotesByDate();
+
   // Fasting state — daily eating window + extended fasts. Defaults on since it's a requested port.
   if(!S.fasting){
     S.fasting={
@@ -977,7 +997,7 @@ const MEASURE_FIELDS = [
 
 const SUPPS = [
   {id:"nac_am",name:"NAC",dose:"600mg — Morning with food",notes:""},
-  {id:"curcumin",name:"Curcumin ⚠️ check label",dose:"1–2 caps with fatty meal",notes:"Verify no soy lecithin in the formulation before taking."},
+  {id:"curcumin",name:"Curcumin",dose:"1–2 caps with fatty meal",notes:""},
   {id:"nac_pm",name:"NAC",dose:"600mg — Evening with food",notes:""},
   {id:"reta",name:"Retatrutide",dose:"Weekly injection — Sunday night",notes:"GLP-1 triple agonist."},
   {id:"ta1",name:"Thymosin Alpha-1",dose:"1mg — Twice weekly (when started)",notes:""},
@@ -1143,7 +1163,7 @@ function checkDayReset(){
   }
 }
 function updateDate(){const el=document.getElementById('h-date');if(el)el.textContent=new Date().toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'long'});}
-function showApp(){document.getElementById('setup-overlay').classList.add('hidden');document.getElementById('allergy-banner').classList.remove('hidden');document.getElementById('main-header').classList.remove('hidden');document.getElementById('main-nav').classList.remove('hidden');document.querySelectorAll('.section').forEach(s=>s.classList.remove('hidden'));applyTabSettings();}
+function showApp(){document.getElementById('setup-overlay').classList.add('hidden');document.getElementById('main-header').classList.remove('hidden');document.getElementById('main-nav').classList.remove('hidden');document.querySelectorAll('.section').forEach(s=>s.classList.remove('hidden'));applyTabSettings();}
 
 // ─── SETTINGS (which tabs are visible — Today/Log/Move always on) ────────────
 const OPTIONAL_TABS=[
@@ -1474,7 +1494,7 @@ async function handleManualPhoto(event){
           model:'claude-sonnet-4-6',max_tokens:400,
           messages:[{role:'user',content:[
             {type:'image',source:{type:'base64',media_type:file.type,data:b64}},
-            {type:'text',text:'Analyse this meal photo for an adult female. Cooked weight assumed. Return ONLY valid JSON: {"name":"meal description","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).'}
+            {type:'text',text:'Analyse this meal photo for an adult female. Cooked weight assumed. Return ONLY valid JSON: {"name":"meal description","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains soy milk or a soy-milk-derived ingredient. Tofu, edamame, soy sauce, soy lecithin, and other soy products are NOT a risk for her — do not flag them.'}
           ]}]
         })
       });
@@ -1490,7 +1510,7 @@ async function handleManualPhoto(event){
       document.getElementById('m-carb').value=Math.round(+meal.carb||0);
       loading.classList.add('hidden');
       document.getElementById('m-food').scrollIntoView({behavior:'smooth',block:'center'});
-      if(meal.soy_risk){ alert('⚠️ Possible soy content detected in this photo — check ingredients before eating given your anaphylactic soy allergy.'); }
+      if(meal.soy_risk){ alert('⚠️ Possible soy milk content detected in this photo — check ingredients before eating given her soy milk allergy.'); }
     }catch(e){
       loading.classList.add('hidden');
       alert("Couldn't analyse this photo. Try the Look Up Macros section instead, or fill in the fields manually.");
@@ -1526,7 +1546,7 @@ async function doLookup(){
       headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},
       body:JSON.stringify({
         model:'claude-sonnet-4-6',max_tokens:300,
-        messages:[{role:'user',content:`Estimate macros for: "${q}". This is for an adult female. Cooked weight assumed unless stated otherwise. Return ONLY valid JSON, no other text: {"name":"descriptive food name with quantity","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one relevant emoji","soy_risk":boolean,"note":"one brief sentence — confidence level or key assumption e.g. cooked weight assumed"}. Set soy_risk true only if the food clearly contains non-fermented soy (tofu, soy milk, edamame, soy protein isolate, TVP). Fermented soy (soy sauce, miso, tempeh) is not a risk.`}]
+        messages:[{role:'user',content:`Estimate macros for: "${q}". This is for an adult female. Cooked weight assumed unless stated otherwise. Return ONLY valid JSON, no other text: {"name":"descriptive food name with quantity","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one relevant emoji","soy_risk":boolean,"note":"one brief sentence — confidence level or key assumption e.g. cooked weight assumed"}. Set soy_risk true only if the food clearly contains soy milk or a soy-milk-derived ingredient. Tofu, edamame, soy sauce, soy protein isolate, TVP, and other soy products are NOT a risk for her — do not flag them.`}]
       })
     });
     const data=await resp.json();
@@ -1539,7 +1559,7 @@ async function doLookup(){
     document.getElementById('lr-macros').innerHTML=`<span class="tag">🔥 ${meal.cal} cal</span><span class="tag" style="background:#ECFDF5;color:#10B981">💪 ${meal.pro}g protein</span><span class="tag" style="background:#FFFBEB;color:#F59E0B">🥑 ${meal.fat}g fat</span><span class="tag" style="background:#EFF6FF;color:#3B82F6">🍝 ${meal.carb}g carbs</span>`;
     document.getElementById('lr-note').textContent=meal.note;
     const noteEl=document.getElementById('lr-note');
-    if(meal.soy_risk){ noteEl.innerHTML='<strong style="color:var(--red)">⚠️ Possible soy content detected</strong> — check ingredients before eating. '+(meal.note||''); }
+    if(meal.soy_risk){ noteEl.innerHTML='<strong style="color:var(--red)">⚠️ Possible soy milk content detected</strong> — check ingredients before eating. '+(meal.note||''); }
     result.style.display='block';
   }catch(e){
     loading.classList.add('hidden');
@@ -1580,7 +1600,7 @@ async function handleMealPhoto(event){
           model:'claude-sonnet-4-6',max_tokens:400,
           messages:[{role:'user',content:[
             {type:'image',source:{type:'base64',media_type:file.type,data:b64}},
-            {type:'text',text:'Analyse this meal photo for an adult female. Cooked weight assumed. Return ONLY valid JSON: {"name":"meal description","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains non-fermented soy products like tofu, soy milk, edamame (edamame is generally ok for most soy allergies but flag it so she can decide).'}
+            {type:'text',text:'Analyse this meal photo for an adult female. Cooked weight assumed. Return ONLY valid JSON: {"name":"meal description","cal":number,"pro":number,"fat":number,"carb":number,"emoji":"one emoji","soy_risk":boolean,"note":"confidence note or key assumption"}. Set soy_risk true only if the meal clearly contains soy milk or a soy-milk-derived ingredient. Tofu, edamame, soy sauce, soy lecithin, and other soy products are NOT a risk for her — do not flag them.'}
           ]}]
         })
       });
@@ -1592,7 +1612,7 @@ async function handleMealPhoto(event){
       meal.cal=+meal.cal||0;meal.pro=+meal.pro||0;meal.fat=+meal.fat||0;meal.carb=+meal.carb||0;
       currentPhotoMeal=meal; // lets showLeftoverOptions() below reuse this estimate without a second AI call
       loading.classList.add('hidden');
-      result.innerHTML=`<div style="padding:8px 0"><div style="font-size:14px;font-weight:700;margin-bottom:6px">${meal.emoji} ${meal.name}</div><div style="margin-bottom:6px"><span class="tag">🔥 ${meal.cal} cal</span><span class="tag" style="background:#ECFDF5;color:#10B981">💪 ${meal.pro}g protein</span><span class="tag" style="background:#FFFBEB;color:#F59E0B">🥑 ${meal.fat}g fat</span><span class="tag" style="background:#EFF6FF;color:#3B82F6">🍝 ${meal.carb}g carbs</span></div>${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given your anaphylactic soy allergy.</div>':''}<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${meal.note}</div><div id="ph-action-row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" style="width:auto" onclick='logPhotoMeal(${JSON.stringify(meal)})'>Add to today ✓</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick='saveAsQuickFood(${JSON.stringify(meal)})'>⭐ Quick Add</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick="showLeftoverOptions()">🥡 Leftovers</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden')">Cancel</button></div><div id="ph-leftover-row" class="hidden" style="margin-top:8px"></div></div>`;
+      result.innerHTML=`<div style="padding:8px 0"><div style="font-size:14px;font-weight:700;margin-bottom:6px">${meal.emoji} ${meal.name}</div><div style="margin-bottom:6px"><span class="tag">🔥 ${meal.cal} cal</span><span class="tag" style="background:#ECFDF5;color:#10B981">💪 ${meal.pro}g protein</span><span class="tag" style="background:#FFFBEB;color:#F59E0B">🥑 ${meal.fat}g fat</span><span class="tag" style="background:#EFF6FF;color:#3B82F6">🍝 ${meal.carb}g carbs</span></div>${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy milk content detected</strong> — check ingredients before eating given her soy milk allergy.</div>':''}<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${meal.note}</div><div id="ph-action-row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" style="width:auto" onclick='logPhotoMeal(${JSON.stringify(meal)})'>Add to today ✓</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick='saveAsQuickFood(${JSON.stringify(meal)})'>⭐ Quick Add</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick="showLeftoverOptions()">🥡 Leftovers</button><button class="btn btn-secondary btn-sm" style="width:auto" onclick="document.getElementById('ph-preview').classList.add('hidden')">Cancel</button></div><div id="ph-leftover-row" class="hidden" style="margin-top:8px"></div></div>`;
     }catch(e){
       loading.classList.add('hidden');
       result.innerHTML=`<div style="color:var(--muted);font-size:13px;padding:8px 0">
@@ -1632,7 +1652,7 @@ function showLeftoverOptions(){
       <div class="macro-field-wrap"><div class="input-label">Fat g</div><input class="input-field" id="lo-fat" type="number" value="${meal.fat}"></div>
       <div class="macro-field-wrap"><div class="input-label">Carbs g</div><input class="input-field" id="lo-carb" type="number" value="${meal.carb}"></div>
     </div>
-    ${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy content detected</strong> — check ingredients before eating given her anaphylactic soy allergy.</div>':''}
+    ${meal.soy_risk?'<div class="info-box red" style="margin-bottom:10px"><strong>⚠️ Possible soy milk content detected</strong> — check ingredients before eating given her soy milk allergy.</div>':''}
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${phEsc(meal.note||'')}</div>
     ${target?`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Deducting will subtract from: <strong>${phEsc(target.name)}</strong>${target.time?' ('+target.time+')':''}</div>`:`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">No meal logged yet today to deduct from — you can still log the leftovers as their own entry.</div>`}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1787,6 +1807,45 @@ function toggleGeneralTips(){
   if(chev)chev.textContent=hidden?'▼ show':'▲ hide';
 }
 function measurementsForDate(dateStr){return (S.measurements||[]).find(m=>m.date===dateStr)||null;}
+function dayNoteForDate(dateStr){return (S.dayNotes||[]).find(n=>n.date===dateStr)||null;}
+// Saves/updates/deletes the free-text note for the currently-viewed date. Deleting is implicit:
+// clearing the textarea on a day that already has a note removes it (tombstoned like any other
+// dated log) rather than leaving an empty entry behind.
+function saveDayNote(){
+  const dateStr=viewDateStr();
+  const el=document.getElementById('day-note-text');
+  const text=el?el.value.trim():'';
+  const existing=dayNoteForDate(dateStr);
+  if(existing && !text){
+    S.dayNotes=(S.dayNotes||[]).filter(n=>n.id!==existing.id);
+    markDeleted('daynote',existing.id);
+  } else if(existing && text){
+    existing.text=text;
+    existing.updatedAt=Date.now();
+  } else if(!existing && text){
+    if(!S.dayNotes)S.dayNotes=[];
+    S.dayNotes.push({id:newId('daynote'),date:dateStr,updatedAt:Date.now(),text});
+  } else {
+    return; // nothing to do — no existing note and nothing typed
+  }
+  saveLocal();
+  const status=document.getElementById('day-note-status');
+  if(status){
+    status.textContent='Saved ✓';
+    setTimeout(()=>{ if(status.textContent==='Saved ✓') status.textContent=''; },1500);
+  }
+}
+// Populates the Notes textarea for the currently-viewed date. Called only on an actual day
+// change/initial load (from renderViewDate()) — NOT from updateAll(), which also runs on every
+// background Drive re-sync and would otherwise wipe in-progress typing, same reasoning as
+// loadMeasurementsIntoForm()/loadWeightIntoForm().
+function loadDayNoteIntoForm(){
+  const existing=dayNoteForDate(viewDateStr());
+  const el=document.getElementById('day-note-text');
+  if(el)el.value=existing?existing.text:'';
+  const status=document.getElementById('day-note-status');
+  if(status)status.textContent='';
+}
 function saveMeasurements(){
   const entry={};
   let any=false;
@@ -2250,6 +2309,7 @@ function renderViewDate(){
   updateAll();
   loadMeasurementsIntoForm(); // only on an actual day change/initial load — see note in updateAll()
   loadWeightIntoForm(); // same reasoning — see note above delWeight()
+  loadDayNoteIntoForm(); // same reasoning — see note above loadDayNoteIntoForm()
   updateOtherLogs();
 }
 // Sleep/weight/movement/measurements summary for the viewed day — only shown when paging back, since those already have their own live tabs for today
@@ -2258,14 +2318,15 @@ function updateOtherLogs(){
   if(!card)return;
   if(isViewingToday()){ card.classList.add('hidden'); return; }
   const dateStr=viewDateStr();
-  const mv=movementForDate(dateStr),sl=sleepForDate(dateStr),wt=weightForDate(dateStr),ms=measurementsForDate(dateStr);
-  if(!mv&&!sl&&!wt&&!ms){ card.classList.add('hidden'); return; }
+  const mv=movementForDate(dateStr),sl=sleepForDate(dateStr),wt=weightForDate(dateStr),ms=measurementsForDate(dateStr),dn=dayNoteForDate(dateStr);
+  if(!mv&&!sl&&!wt&&!ms&&!dn){ card.classList.add('hidden'); return; }
   card.classList.remove('hidden');
   let html='';
   if(mv)html+=`<div class="history-row"><span>🏃 Movement</span><span style="font-weight:700">${mv.steps.toLocaleString()} steps · ${mv.calBurned.toLocaleString()} cal burned</span></div>`;
   if(sl)html+=`<div class="history-row"><span>😴 Sleep</span><span style="font-weight:700">${fmtHM(sl.total)} total · ${fmtMins(sl.deep)} deep · ${fmtMins(sl.rem)} REM</span></div>`;
   if(wt)html+=`<div class="history-row"><span>⚖️ Weight</span><span style="font-weight:700">${wt.weight}kg</span></div>`;
   if(ms)html+=`<div class="history-row"><span>📏 Measurements</span><span style="font-weight:700;text-align:right;max-width:65%">${fmtMeasureEntry(ms)||'Logged'}</span></div>`;
+  if(dn)html+=`<div class="history-row"><span>📝 Notes</span><span style="font-weight:700;text-align:right;max-width:65%">${dn.text}</span></div>`;
   document.getElementById('other-logs-body').innerHTML=html;
 }
 // ─── PEPTIDES (built ahead of time — off by default until Lauren decides to use it) ──
@@ -2369,11 +2430,11 @@ function retryPeptideLookup(id){
 }
 async function fetchPeptideInfo(name,dose){
   try{
-    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:350,messages:[{role:'user',content:`Give a brief practical profile for the peptide/compound "${name}" (dose/timing as described: "${dose}"). Also flag if it commonly involves soy-derived carriers or fillers, since the user has an anaphylactic soy allergy. Return ONLY valid JSON, no other text:
+    const resp=await fetch('https://josh-tracker-proxy.joe-shwa-smith.workers.dev',{method:'POST',headers:{'Content-Type':'application/json','X-App-Key':'IhDgBIUxaM86f12tBXwNIhvufgCmW5qF'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:350,messages:[{role:'user',content:`Give a brief practical profile for the peptide/compound "${name}" (dose/timing as described: "${dose}"). Also flag if it commonly involves soy milk or soy-milk-derived carriers or fillers — other soy derivatives (e.g. soy lecithin) are not a concern for this user, only soy milk specifically. Return ONLY valid JSON, no other text:
 {"purpose":"one sentence — what it's used for","cautions":["short caution 1","short caution 2"],"evidence":"one short clause, or empty string"}
 
 Rules:
-- "cautions": at most 2, only genuinely relevant ones (timing, interactions, common side effects, or soy-derived excipients if applicable). Empty array if nothing notable.
+- "cautions": at most 2, only genuinely relevant ones (timing, interactions, common side effects, or soy milk-derived excipients if applicable). Empty array if nothing notable.
 - "evidence": only fill this in if there's a meaningful gap between how long/widely a compound has been used in humans and how well that use is independently verified by modern Western trial standards. When it applies, state it as two short clauses: "Long clinical/use history in [region/context]; limited independent Western trial data" — never collapse into vague phrasing like "limited human data" alone. If the compound's evidence is well-established, or there's genuinely little human use of any kind, leave "evidence" as an empty string.`}]})});
     if(!resp.ok){console.error('Peptide lookup HTTP error:',resp.status,await resp.text().catch(()=>''));return {__failed:true};}
     const data=await resp.json();
@@ -2460,18 +2521,25 @@ function buildSys(){
   // Measurements weren't surfaced to the Ask assistant at all before this — it could see weight
   // trends but not tape-measure progress. Ported from josh_tracker_v34.html.
   const measurementLines=[...(S.measurements||[])].slice(-5).map(m=>`${m.date}: ${fmtMeasureEntry(m)}${m.notes?' ('+m.notes+')':''}`).join('; ');
+  // Actual logged dose/injection history (S.peptideLogs), not just each peptide's current status —
+  // these entries are already timestamped (date + updatedAt) so there's no gap to fix there, just
+  // wire the existing data into the Ask context. Most recent first by updatedAt.
+  const peptideLogLines=[...(S.peptideLogs||[])].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,8).map(l=>`${l.date} ${peptideNameById(l.peptideId)}: ${l.units}u/${l.mg}mg${l.notes?' — '+l.notes:''}`).join('; ');
+  const dayNoteLines=[...(S.dayNotes||[])].filter(n=>n.text).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,5).map(n=>`${n.date}: ${n.text}`).join('; ');
   return `You are Lauren's personal wellness assistant. Lauren: female, height ${p?p.height:158}cm, current ~${S.weights.length?S.weights[S.weights.length-1].weight:(p?p.current:'unknown')}kg, goal ${p?p.goal:'unknown'}kg.
 
-CRITICAL ALLERGY: Lauren is ANAPHYLACTIC to soy protein. She has had two hospital-level reactions. She carries an EpiPen. Always flag any food or supplement that may contain soy protein, soy lecithin, or soy derivatives. Exception: fermented soy products (soy sauce, miso, tempeh) are generally tolerated as fermentation breaks down the allergenic proteins. Trace contamination ("may contain soy") has caused inconsistent reactions — treat with caution.
+CRITICAL ALLERGY: Lauren has a specific (anaphylactic-level) reaction to the soy protein found in soy milk and soy-milk-based products. She carries an EpiPen. She tolerates soy sauce, tofu, edamame, soy lecithin, and other soy-containing foods/derivatives without issue — the reaction is specific to soy milk, not soy in general. Only flag soy milk or soy-milk-derived ingredients; do not flag tofu, edamame, soy sauce, soy lecithin, or other soy derivatives.
 
 Current supplements: ${suppLines||'none'}.
 Peptides in use: ${peptideLines||'none'}.
+Recent peptide dose history: ${peptideLogLines||'none logged yet'}.
 ${fastingLine}
 
 Today: ${t.cal} cal, ${t.pro}g protein (goal ${p?p.protein:184}g), ${t.fat}g fat, ${t.carb}g carbs, ${getWaterTotal()}ml water.
 Recent body measurements: ${measurementLines||'none logged'}.
+Recent day notes: ${dayNoteLines||'none'}.
 
-Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food, supplement, or peptide suggestion against the soy allergy before recommending it.
+Be direct, practical, plain English, warm and encouraging. Protein target is a top priority, especially on days she's taken Retatrutide since it can suppress appetite. Cooked weight is default assumption for meat. Always double-check any food, supplement, or peptide suggestion against her soy milk allergy before recommending it.
 
 ${ACTION_PROTOCOL}`;
 }
@@ -2484,7 +2552,7 @@ const ACTION_PROTOCOL=`If Lauren clearly and explicitly asks you to log/add/reco
 [ACTION:log_weight]{"weight":N}[/ACTION]
 [ACTION:log_movement]{"steps":N,"calBurned":N}[/ACTION]
 [ACTION:log_sleep]{"total":N,"deep":N,"rem":N,"notes":"..."}[/ACTION]
-(total/deep/rem in hours/minutes respectively, matching how they're entered elsewhere in the app. Set "soy_risk" true only if the food clearly contains non-fermented soy — tofu, soy milk, edamame, soy protein isolate — so it can be flagged given her anaphylactic soy allergy.)
+(total/deep/rem in hours/minutes respectively, matching how they're entered elsewhere in the app. Set "soy_risk" true only if the food clearly contains soy milk or a soy-milk-derived ingredient — tofu, edamame, soy sauce, soy lecithin, and other soy derivatives are NOT a risk for her, so don't flag them.)
 Estimate macros for a described meal the same way you would for a normal food lookup — reasonable confidence is fine, cooked weight assumed. Only emit an action block when she has actually asked you to log something, never just because food or activity was mentioned in passing. If what she wants logged is too vague to estimate at all, ask a clarifying question instead of guessing wildly. You can emit more than one action block if she's asked to log several things at once. Keep your normal reply text short when you've logged something — a brief natural confirmation is enough, the app will also show its own confirmation.`;
 
 // ─── CHAT ACTIONS (lets the assistant write to the tracker, not just read it) ────────────
@@ -2521,7 +2589,7 @@ function executeChatAction(type,data){
     switch(type){
       case 'log_meal':
         addMeal({name:data.name||'Logged via chat',cal:+data.cal||0,pro:+data.pro||0,fat:+data.fat||0,carb:+data.carb||0,emoji:data.emoji||'🍽️'});
-        return (data.soy_risk?'⚠️ Possible soy content — check before eating. ':'')+`✅ Logged: ${data.emoji||'🍽️'} ${data.name} — ${Math.round(+data.cal||0)} cal, ${Math.round(+data.pro||0)}g protein`;
+        return (data.soy_risk?'⚠️ Possible soy milk content — check before eating. ':'')+`✅ Logged: ${data.emoji||'🍽️'} ${data.name} — ${Math.round(+data.cal||0)} cal, ${Math.round(+data.pro||0)}g protein`;
       case 'log_water':
         addWater(+data.ml||0);
         return `✅ Logged: 💧 ${+data.ml||0}ml water`;
@@ -2849,6 +2917,8 @@ async function loadFromDrive(){
         S.quickFoods = mergeById(S.quickFoods, driveData.quickFoods, 'quickfood');
         dedupeQuickFoodsByName(); // clean up any same-name duplicates the Drive merge just re-introduced
         S.measurements = mergeById(S.measurements, driveData.measurements, 'measurement').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
+        S.dayNotes = mergeById(S.dayNotes, driveData.dayNotes, 'daynote').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
+        dedupeDayNotesByDate(); // clean up any same-date duplicates the Drive merge just re-introduced
         if(driveData.fasting){
           if(!S.fasting)S.fasting={windowEnabled:false,windowHours:6,windowStart:'12:00',current:null,log:[]};
           S.fasting.log = mergeById(S.fasting.log, driveData.fasting.log, 'fast');
@@ -2902,6 +2972,7 @@ async function syncToDrive(){
       tombstones: S.tombstones,
       quickFoods: S.quickFoods,
       measurements: S.measurements,
+      dayNotes: S.dayNotes,
       fasting: S.fasting,
       lastSync: new Date().toISOString()
     });
